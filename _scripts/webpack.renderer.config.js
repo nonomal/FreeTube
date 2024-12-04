@@ -1,15 +1,25 @@
 const path = require('path')
+const { readFileSync, readdirSync } = require('fs')
 const webpack = require('webpack')
 const HtmlWebpackPlugin = require('html-webpack-plugin')
 const VueLoaderPlugin = require('vue-loader/lib/plugin')
 const MiniCssExtractPlugin = require('mini-css-extract-plugin')
 const CssMinimizerPlugin = require('css-minimizer-webpack-plugin')
 const ProcessLocalesPlugin = require('./ProcessLocalesPlugin')
+const CopyWebpackPlugin = require('copy-webpack-plugin')
+const {
+  SHAKA_LOCALE_MAPPINGS,
+  SHAKA_LOCALES_PREBUNDLED,
+  SHAKA_LOCALES_TO_BE_BUNDLED
+} = require('./getShakaLocales')
 
 const isDevMode = process.env.NODE_ENV === 'development'
 
+const { version: swiperVersion } = JSON.parse(readFileSync(path.join(__dirname, '../node_modules/swiper/package.json')))
+
 const processLocalesPlugin = new ProcessLocalesPlugin({
   compress: !isDevMode,
+  hotReload: isDevMode,
   inputDir: path.join(__dirname, '../static/locales'),
   outputDir: 'static/locales',
 })
@@ -106,45 +116,81 @@ const config = {
     ]
   },
   node: {
-    __dirname: isDevMode,
-    __filename: isDevMode
+    __dirname: false,
+    __filename: false
   },
   plugins: [
     processLocalesPlugin,
     new webpack.DefinePlugin({
       'process.env.IS_ELECTRON': true,
       'process.env.IS_ELECTRON_MAIN': false,
-      'process.env.LOCALE_NAMES': JSON.stringify(processLocalesPlugin.localeNames)
+      'process.env.SUPPORTS_LOCAL_API': true,
+      'process.env.LOCALE_NAMES': JSON.stringify(processLocalesPlugin.localeNames),
+      'process.env.GEOLOCATION_NAMES': JSON.stringify(readdirSync(path.join(__dirname, '..', 'static', 'geolocations')).map(filename => filename.replace('.json', ''))),
+      'process.env.SWIPER_VERSION': `'${swiperVersion}'`,
+      'process.env.SHAKA_LOCALE_MAPPINGS': JSON.stringify(SHAKA_LOCALE_MAPPINGS),
+      'process.env.SHAKA_LOCALES_PREBUNDLED': JSON.stringify(SHAKA_LOCALES_PREBUNDLED)
     }),
     new HtmlWebpackPlugin({
       excludeChunks: ['processTaskWorker'],
       filename: 'index.html',
-      template: path.resolve(__dirname, '../src/index.ejs'),
-      nodeModules: isDevMode
-        ? path.resolve(__dirname, '../node_modules')
-        : false,
+      template: path.resolve(__dirname, '../src/index.ejs')
     }),
     new VueLoaderPlugin(),
     new MiniCssExtractPlugin({
       filename: isDevMode ? '[name].css' : '[name].[contenthash].css',
       chunkFilename: isDevMode ? '[id].css' : '[id].[contenthash].css',
+    }),
+    new CopyWebpackPlugin({
+      patterns: [
+        {
+          from: path.join(__dirname, '../node_modules/swiper/modules/{a11y,navigation,pagination}-element.css').replaceAll('\\', '/'),
+          to: `swiper-${swiperVersion}.css`,
+          context: path.join(__dirname, '../node_modules/swiper/modules'),
+          transformAll: (assets) => {
+            return Buffer.concat(assets.map(asset => asset.data))
+          }
+        },
+        // Don't need to copy them in dev mode,
+        // as we configure WebpackDevServer to serve them
+        ...(isDevMode
+          ? []
+          : [
+              {
+                from: path.join(__dirname, '../node_modules/shaka-player/ui/locales', `{${SHAKA_LOCALES_TO_BE_BUNDLED.join(',')}}.json`).replaceAll('\\', '/'),
+                to: path.join(__dirname, '../dist/static/shaka-player-locales'),
+                context: path.join(__dirname, '../node_modules/shaka-player/ui/locales'),
+                transform: {
+                  transformer: (input) => {
+                    return JSON.stringify(JSON.parse(input.toString('utf-8')))
+                  }
+                }
+              }
+            ])
+      ]
     })
   ],
   resolve: {
     alias: {
-      vue$: 'vue/dist/vue.common.js',
+      vue$: 'vue/dist/vue.runtime.esm.js',
+      'portal-vue$': 'portal-vue/dist/portal-vue.esm.js',
 
-      // use the web version of linkedom
-      linkedom$: 'linkedom/worker',
+      DB_HANDLERS_ELECTRON_RENDERER_OR_WEB$: path.resolve(__dirname, '../src/datastores/handlers/electron.js'),
 
-      // defaults to the prebundled browser version which causes webpack to error with:
-      // "Critical dependency: require function is used in a way in which dependencies cannot be statically extracted"
-      // webpack likes to bundle the dependencies itself, could really have a better error message though
-      'youtubei.js$': 'youtubei.js/dist/browser.js',
+      'youtubei.js$': 'youtubei.js/web',
+
+      // change to "shaka-player.ui.debug.js" to get debug logs (update jsconfig to get updated types)
+      'shaka-player$': 'shaka-player/dist/shaka-player.ui.js',
     },
     extensions: ['.js', '.vue']
   },
   target: 'electron-renderer',
+}
+
+if (isDevMode) {
+  // hack to pass it through to the dev-runner.js script
+  // gets removed there before the config object is passed to webpack
+  config.SHAKA_LOCALES_TO_BE_BUNDLED = SHAKA_LOCALES_TO_BE_BUNDLED
 }
 
 module.exports = config

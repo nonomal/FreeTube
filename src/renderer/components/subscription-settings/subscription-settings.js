@@ -9,27 +9,30 @@ export default defineComponent({
     'ft-settings-section': FtSettingsSection,
     'ft-toggle-switch': FtToggleSwitch
   },
-  data: function () {
-    return {
-      title: 'Subscription Settings'
-    }
-  },
   computed: {
     hideWatchedSubs: function () {
       return this.$store.getters.getHideWatchedSubs
+    },
+    onlyShowLatestFromChannel: function () {
+      return this.$store.getters.getOnlyShowLatestFromChannel
     },
     useRssFeeds: function () {
       return this.$store.getters.getUseRssFeeds
     },
     fetchSubscriptionsAutomatically: function () {
       return this.$store.getters.getFetchSubscriptionsAutomatically
+    },
+    unsubscriptionPopupStatus: function () {
+      return this.$store.getters.getUnsubscriptionPopupStatus
     }
   },
   methods: {
     ...mapActions([
       'updateHideWatchedSubs',
       'updateUseRssFeeds',
-      'updateFetchSubscriptionsAutomatically'
+      'updateFetchSubscriptionsAutomatically',
+      'updateOnlyShowLatestFromChannel',
+      'updateUnsubscriptionPopupStatus'
     ])
   }
 })

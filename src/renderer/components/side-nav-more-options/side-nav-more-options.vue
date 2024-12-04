@@ -37,13 +37,14 @@
           class="thumbnailContainer"
         >
           <font-awesome-icon
-            :icon="['fas', 'list']"
+            :icon="['fas', 'user-check']"
             class="navIcon"
             :class="applyNavIconExpand"
             fixed-width
           />
         </div>
         <p
+          v-if="!hideLabelsSideBar"
           id="channelLabel"
           class="navLabel"
         >

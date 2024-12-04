@@ -6,7 +6,6 @@
     <!--  eslint-disable vue/no-template-key -->
     <template
       v-for="(label, index) in labels"
-      class="radioButtonContainer"
     >
       <input
         :id="values[index] + id"
@@ -14,11 +13,11 @@
         v-model="selectedValue"
         :name="inputName"
         :value="values[index]"
-        :checked="index === 0"
+        :checked="index === initialValueIndex"
         :disabled="disabled"
         class="radio"
         type="radio"
-        @change="$emit('change', values[index])"
+        @change="change(values[index])"
       >
       <label
         :key="label"

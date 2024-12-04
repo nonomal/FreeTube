@@ -1,13 +1,14 @@
 <template>
-  <details class="settingsSection">
-    <summary class="sectionHeader">
+  <div
+    class="settingsSection"
+  >
+    <div class="sectionBody">
       <h3 class="sectionTitle">
         {{ title }}
       </h3>
-    </summary>
-    <hr class="sectionLine">
-    <slot />
-  </details>
+      <slot />
+    </div>
+  </div>
 </template>
 
 <script src="./ft-settings-section.js" />

@@ -8,11 +8,26 @@
         :default-value="useSponsorBlock"
         @change="handleUpdateSponsorBlock"
       />
+      <ft-toggle-switch
+        :label="$t('Settings.SponsorBlock Settings.UseDeArrowTitles')"
+        :default-value="useDeArrowTitles"
+        :tooltip="$t('Tooltips.SponsorBlock Settings.UseDeArrowTitles')"
+        @change="handleUpdateUseDeArrowTitles"
+      />
+      <ft-toggle-switch
+        :label="$t('Settings.SponsorBlock Settings.UseDeArrowThumbnails')"
+        :default-value="useDeArrowThumbnails"
+        :tooltip="$t('Tooltips.SponsorBlock Settings.UseDeArrowThumbnails')"
+        @change="handleUpdateUseDeArrowThumbnails"
+      />
     </ft-flex-box>
-    <div
-      v-if="useSponsorBlock"
+    <template
+      v-if="useSponsorBlock || useDeArrowTitles || useDeArrowThumbnails"
     >
-      <ft-flex-box class="settingsFlexStart500px">
+      <ft-flex-box
+        v-if="useSponsorBlock"
+        class="settingsFlexStart500px"
+      >
         <ft-toggle-switch
           :label="$t('Settings.SponsorBlock Settings.Notify when sponsor segment is skipped')"
           :default-value="sponsorBlockShowSkippedToast"
@@ -28,14 +43,29 @@
           @input="handleUpdateSponsorBlockUrl"
         />
       </ft-flex-box>
-      <ft-flex-box>
+      <ft-flex-box
+        v-if="useDeArrowThumbnails"
+      >
+        <ft-input
+          v-if="useDeArrowThumbnails"
+          :placeholder="$t('Settings.SponsorBlock Settings[\'DeArrow Thumbnail Generator API Url (Default is https://dearrow-thumb.ajay.app)\']')"
+          :show-action-button="false"
+          :show-label="true"
+          :value="deArrowThumbnailGeneratorUrl"
+          @input="handleUpdateDeArrowThumbnailGeneratorUrl"
+        />
+      </ft-flex-box>
+
+      <ft-flex-box
+        v-if="useSponsorBlock"
+      >
         <ft-sponsor-block-category
           v-for="category in categories"
           :key="category"
           :category-name="category"
         />
       </ft-flex-box>
-    </div>
+    </template>
   </ft-settings-section>
 </template>
 

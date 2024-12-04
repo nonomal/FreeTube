@@ -1,17 +1,19 @@
+/* stylelint-disable no-descending-specificity */
 .ftIconButton {
   display: flex;
   flex-flow: row wrap;
   justify-content: space-evenly;
   position: relative;
+  line-height: normal;
   user-select: none;
 }
 
 .iconButton {
   border-radius: 50%;
   cursor: pointer;
-  height: 1em;
+  block-size: 1em;
   transition: background 0.15s ease-out;
-  width: 1em;
+  inline-size: 1em;
 
   &.shadow {
     box-shadow: 0 1px 2px rgb(0 0 0 / 50%);
@@ -21,24 +23,32 @@
     background-color: var(--card-bg-color);
     color: var(--primary-text-color);
 
-    &:hover,
-    &:focus {
-      background-color: var(--side-nav-hover-color);
-    }
+    &:not(.disabled) {
+      &:hover,
+      &:focus-visible,
+      &.pressed {
+        background-color: var(--side-nav-hover-color);
+        color: var(--side-nav-hover-text-color);
+      }
 
-    &:active {
-      background-color: var(--side-nav-active-color);
+      &.active {
+        background-color: var(--side-nav-active-color);
+        color: var(--side-nav-active-text-color);
+      }
     }
   }
 
-  &.base-no-default {
+  &.base-no-default:not(.disabled) {
     &:hover,
-    &:focus {
+    &:focus-visible,
+    &.pressed {
       background-color: var(--side-nav-hover-color);
+      color: var(--side-nav-hover-text-color);
     }
 
-    &:active {
+    &.active {
       background-color: var(--side-nav-active-color);
+      color: var(--side-nav-active-text-color);
     }
   }
 
@@ -46,33 +56,70 @@
     background-color: var(--primary-color);
     color: var(--text-with-main-color);
 
-    &:hover,
-    &:focus {
-      background-color: var(--primary-color-hover);
-    }
+    &:not(.disabled) {
+      &:hover,
+      &:focus-visible,
+      &.pressed {
+        background-color: var(--primary-color-hover);
+      }
 
-    &:active {
-      background-color: var(--primary-color-active);
+      &.active {
+        background-color: var(--primary-color-active);
+      }
     }
   }
+
 
   &.secondary {
     background-color: var(--accent-color);
     color: var(--text-with-accent-color);
 
-    &:hover,
-    &:focus {
-      background-color: var(--accent-color-hover);
-    }
+    &:not(.disabled) {
+      &:hover,
+      &:focus-visible,
+      &.pressed {
+        background-color: var(--accent-color-hover);
+      }
 
-    &:active {
-      background-color: var(--accent-color-active);
+      &.active {
+        background-color: var(--accent-color-active);
+      }
     }
   }
 
-  &.favorite {
+  &.destructive {
+    background-color: var(--destructive-color);
+    color: var(--destructive-text-color);
+
+    &:not(.disabled) {
+      &:hover,
+      &:focus-visible,
+      &.pressed {
+        background-color: var(--destructive-hover-color);
+      }
+
+      &.active {
+        background-color: var(--destructive-active-color);
+      }
+    }
+  }
+
+  &.favorite,
+  &.favorite:hover,
+  &.favorite:focus-visible {
     color: var(--favorite-icon-color);
+
+    &:not(.disabled) {
+      color: var(--favorite-icon-color);
+    }
   }
+}
+
+.disabled {
+  opacity: 0.5;
+  pointer-events: auto;
+  cursor: default;
+  user-select: none;
 }
 
 .iconDropdown {
@@ -88,19 +135,19 @@
   z-index: 3;
 
   &.left {
-    right: calc(50% - 10px);
+    inset-inline-end: calc(50% - 10px);
   }
 
   &.right {
-    left: calc(50% - 10px);
+    inset-inline-start: calc(50% - 10px);
   }
 
   &.top {
-    bottom: 45px;
+    inset-block-end: 45px;
   }
 
   &.bottom {
-    top: 45px;
+    inset-block-start: 45px;
   }
 
   .list {
@@ -109,30 +156,53 @@
     padding: 0;
   }
 
+  :has(.active) {
+    .checkmarkColumn {
+      min-inline-size: 12px;
+    }
+
+    .listItem {
+      display: flex;
+      gap: 6px;
+    }
+  }
+
   .listItem {
     cursor: pointer;
     margin: 0;
-    padding: 8px 10px;
+    padding-block: 8px;
+    padding-inline: 10px;
     transition: background 0.2s ease-out;
     white-space: nowrap;
 
     &:hover,
-    &:focus {
+    &:focus-visible,
+    &.pressed,
+    &.active {
       background-color: var(--side-nav-hover-color);
+      color: var(--side-nav-hover-text-color);
       transition: background 0.2s ease-in;
+    }
+
+    &.active {
+      font-weight: 600;
+      display: flex;
+      gap: 6px;
     }
 
     &:active {
       background-color: var(--side-nav-active-color);
+      color: var(--side-nav-active-text-color);
       transition: background 0.1s ease-in;
     }
   }
 
   .listItemDivider {
-    border-top: 1px solid var(--tertiary-text-color);
-    margin: 1px auto;
+    border-block-start: 1px solid var(--tertiary-text-color);
+    margin-block: 1px;
+    margin-inline: auto;
     // Too "visible" with current color
     opacity: 0.5;
-    width: 95%;
+    inline-size: 95%;
   }
 }

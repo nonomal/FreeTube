@@ -2,18 +2,20 @@
   <div class="select">
     <select
       :id="sanitizedId ?? sanitizedPlaceholder"
+      ref="select"
       :describe-by-id="describeById"
       class="select-text"
       :class="{disabled: disabled}"
       :value="value"
       :name="sanitizedId ?? sanitizedPlaceholder"
       :disabled="disabled"
-      @change="$emit('change', $event.target.value)"
+      @change="change($event.target.value)"
     >
       <option
         v-for="(name, index) in selectNames"
         :key="index"
         :value="selectValues[index]"
+        :lang="isLocaleSelector && selectValues[index] !== 'system' ? selectValues[index] : null"
       >
         {{ name }}
       </option>
@@ -25,10 +27,15 @@
     <span class="select-highlight" />
     <span class="select-bar" />
     <label
+      v-if="!disabled"
       class="select-label"
       :for="sanitizedId ?? sanitizedPlaceholder"
-      :hidden="disabled"
     >
+      <font-awesome-icon
+        :icon="icon"
+        class="select-icon"
+        :color="iconColor"
+      />
       {{ placeholder }}
     </label>
     <ft-tooltip

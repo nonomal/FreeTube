@@ -1,4 +1,4 @@
-import baseHandlers from './base'
+import * as baseHandlers from './base'
 
 // TODO: Syncing
 // Syncing on the web would involve a different implementation
@@ -29,12 +29,16 @@ class History {
     return baseHandlers.history.upsert(record)
   }
 
+  static overwrite(records) {
+    return baseHandlers.history.overwrite(records)
+  }
+
   static updateWatchProgress(videoId, watchProgress) {
     return baseHandlers.history.updateWatchProgress(videoId, watchProgress)
   }
 
-  static updateLastViewedPlaylist(videoId, lastViewedPlaylistId) {
-    return baseHandlers.history.updateLastViewedPlaylist(videoId, lastViewedPlaylistId)
+  static updateLastViewedPlaylist(videoId, lastViewedPlaylistId, lastViewedPlaylistType, lastViewedPlaylistItemId) {
+    return baseHandlers.history.updateLastViewedPlaylist(videoId, lastViewedPlaylistId, lastViewedPlaylistType, lastViewedPlaylistItemId)
   }
 
   static delete(videoId) {
@@ -43,10 +47,6 @@ class History {
 
   static deleteAll() {
     return baseHandlers.history.deleteAll()
-  }
-
-  static persist() {
-    baseHandlers.history.persist()
   }
 }
 
@@ -63,12 +63,16 @@ class Profiles {
     return baseHandlers.profiles.upsert(profile)
   }
 
-  static delete(id) {
-    return baseHandlers.profiles.delete(id)
+  static addChannelToProfiles(channel, profileIds) {
+    return baseHandlers.profiles.addChannelToProfiles(channel, profileIds)
   }
 
-  static persist() {
-    baseHandlers.profiles.persist()
+  static removeChannelFromProfiles(channelId, profileIds) {
+    return baseHandlers.profiles.removeChannelFromProfiles(channelId, profileIds)
+  }
+
+  static delete(id) {
+    return baseHandlers.profiles.delete(id)
   }
 }
 
@@ -81,28 +85,32 @@ class Playlists {
     return baseHandlers.playlists.find()
   }
 
-  static upsertVideoByPlaylistName(playlistName, videoData) {
-    return baseHandlers.playlists.upsertVideoByPlaylistName(playlistName, videoData)
+  static upsert(playlist) {
+    return baseHandlers.playlists.upsert(playlist)
   }
 
-  static upsertVideoIdsByPlaylistId(_id, videoIds) {
-    return baseHandlers.playlists.upsertVideoIdsByPlaylistId(_id, videoIds)
+  static upsertVideoByPlaylistId(_id, videoData) {
+    return baseHandlers.playlists.upsertVideoByPlaylistId(_id, videoData)
+  }
+
+  static upsertVideosByPlaylistId(_id, videoData) {
+    return baseHandlers.playlists.upsertVideosByPlaylistId(_id, videoData)
   }
 
   static delete(_id) {
     return baseHandlers.playlists.delete(_id)
   }
 
-  static deleteVideoIdByPlaylistName(playlistName, videoId) {
-    return baseHandlers.playlists.deleteVideoIdByPlaylistName(playlistName, videoId)
+  static deleteVideoIdByPlaylistId({ _id, videoId, playlistItemId }) {
+    return baseHandlers.playlists.deleteVideoIdByPlaylistId({ _id, videoId, playlistItemId })
   }
 
-  static deleteVideoIdsByPlaylistName(playlistName, videoIds) {
-    return baseHandlers.playlists.deleteVideoIdsByPlaylistName(playlistName, videoIds)
+  static deleteVideoIdsByPlaylistId(_id, videoIds) {
+    return baseHandlers.playlists.deleteVideoIdsByPlaylistId(_id, videoIds)
   }
 
-  static deleteAllVideosByPlaylistName(playlistName) {
-    return baseHandlers.playlists.deleteAllVideosByPlaylistName(playlistName)
+  static deleteAllVideosByPlaylistId(_id) {
+    return baseHandlers.playlists.deleteAllVideosByPlaylistId(_id)
   }
 
   static deleteMultiple(ids) {
@@ -114,11 +122,63 @@ class Playlists {
   }
 }
 
-const handlers = {
-  settings: Settings,
-  history: History,
-  profiles: Profiles,
-  playlists: Playlists
+class SubscriptionCache {
+  static find() {
+    return baseHandlers.subscriptionCache.find()
+  }
+
+  static updateVideosByChannelId({ channelId, entries, timestamp }) {
+    return baseHandlers.subscriptionCache.updateVideosByChannelId({
+      channelId,
+      entries,
+      timestamp,
+    })
+  }
+
+  static updateLiveStreamsByChannelId({ channelId, entries, timestamp }) {
+    return baseHandlers.subscriptionCache.updateLiveStreamsByChannelId({
+      channelId,
+      entries,
+      timestamp,
+    })
+  }
+
+  static updateShortsByChannelId({ channelId, entries, timestamp }) {
+    return baseHandlers.subscriptionCache.updateShortsByChannelId({
+      channelId,
+      entries,
+      timestamp,
+    })
+  }
+
+  static updateShortsWithChannelPageShortsByChannelId({ channelId, entries }) {
+    return baseHandlers.subscriptionCache.updateShortsWithChannelPageShortsByChannelId({
+      channelId,
+      entries,
+    })
+  }
+
+  static updateCommunityPostsByChannelId({ channelId, entries, timestamp }) {
+    return baseHandlers.subscriptionCache.updateCommunityPostsByChannelId({
+      channelId,
+      entries,
+      timestamp,
+    })
+  }
+
+  static deleteMultipleChannels(channelIds) {
+    return baseHandlers.subscriptionCache.deleteMultipleChannels(channelIds)
+  }
+
+  static deleteAll() {
+    return baseHandlers.subscriptionCache.deleteAll()
+  }
 }
 
-export default handlers
+export {
+  Settings as settings,
+  History as history,
+  Profiles as profiles,
+  Playlists as playlists,
+  SubscriptionCache as subscriptionCache,
+}

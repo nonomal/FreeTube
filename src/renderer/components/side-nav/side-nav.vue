@@ -3,6 +3,7 @@
     ref="sideNav"
     class="sideNav"
     :class="[{closed: !isOpen}, applyHiddenLabels]"
+    role="navigation"
   >
     <div
       class="inner"
@@ -41,7 +42,7 @@
           class="thumbnailContainer"
         >
           <font-awesome-icon
-            :icon="['fas', 'list']"
+            :icon="['fas', 'user-check']"
             class="navIcon"
             :class="applyNavIconExpand"
             fixed-width
@@ -131,7 +132,7 @@
         class="navOption mobileShow"
         role="button"
         to="/history"
-        :title="$t('History.History')"
+        :title="historyTitle"
       >
         <div
           class="thumbnailContainer"
@@ -155,7 +156,7 @@
         class="navOption mobileShow"
         role="button"
         to="/settings"
-        :title="$t('Settings.Settings')"
+        :title="settingsTitle"
       >
         <div
           class="thumbnailContainer"
@@ -213,10 +214,19 @@
             class="thumbnailContainer"
           >
             <img
+              v-if="channel.thumbnail != null"
               class="channelThumbnail"
+              height="35"
+              width="35"
+              loading="lazy"
               :src="channel.thumbnail"
               :alt="isOpen ? '' : channel.name"
             >
+            <font-awesome-icon
+              v-else
+              class="channelThumbnail noThumbnail"
+              :icon="['fas', 'circle-user']"
+            />
           </div>
           <p
             v-if="isOpen"

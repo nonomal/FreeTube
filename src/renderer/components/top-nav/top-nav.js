@@ -1,30 +1,43 @@
 import { defineComponent } from 'vue'
 import { mapActions } from 'vuex'
 import FtInput from '../ft-input/ft-input.vue'
-import FtSearchFilters from '../ft-search-filters/ft-search-filters.vue'
 import FtProfileSelector from '../ft-profile-selector/ft-profile-selector.vue'
+import FtIconButton from '../ft-icon-button/ft-icon-button.vue'
 import debounce from 'lodash.debounce'
 
-import { IpcChannels } from '../../../constants'
-import { openInternalPath, showToast } from '../../helpers/utils'
+import { IpcChannels, KeyboardShortcuts, MOBILE_WIDTH_THRESHOLD } from '../../../constants'
+import { localizeAndAddKeyboardShortcutToActionTitle, openInternalPath } from '../../helpers/utils'
+import { translateWindowTitle } from '../../helpers/strings'
 import { clearLocalSearchSuggestionsSession, getLocalSearchSuggestions } from '../../helpers/api/local'
 import { invidiousAPICall } from '../../helpers/api/invidious'
+
+const NAV_HISTORY_DISPLAY_LIMIT = 15
+const HALF_OF_NAV_HISTORY_DISPLAY_LIMIT = Math.floor(NAV_HISTORY_DISPLAY_LIMIT / 2)
 
 export default defineComponent({
   name: 'TopNav',
   components: {
+    FtIconButton,
     FtInput,
-    FtSearchFilters,
     FtProfileSelector
   },
   data: () => {
+    let isArrowBackwardDisabled = true
+    let isArrowForwardDisabled = true
+
+    // If the Navigation API isn't supported (Firefox and Safari)
+    // keep the back and forwards buttons always enabled
+    if (!('navigation' in window)) {
+      isArrowBackwardDisabled = false
+      isArrowForwardDisabled = false
+    }
+
     return {
-      component: this,
       showSearchContainer: true,
-      showFilters: false,
-      searchFilterValueChanged: false,
-      historyIndex: 1,
-      isForwardOrBack: false,
+      isArrowBackwardDisabled,
+      isArrowForwardDisabled,
+      navigationHistoryDropdownActiveEntry: null,
+      navigationHistoryDropdownOptions: [],
       searchSuggestionsDataList: [],
       lastSuggestionQuery: ''
     }
@@ -38,12 +51,22 @@ export default defineComponent({
       return this.$store.getters.getHideHeaderLogo
     },
 
-    enableSearchSuggestions: function () {
-      return this.$store.getters.getEnableSearchSuggestions
+    landingPage: function () {
+      return this.$store.getters.getLandingPage
     },
 
-    searchInput: function () {
-      return this.$refs.searchInput.$refs.input
+    headerLogoTitle: function () {
+      return this.$t('Go to page',
+        {
+          page: translateWindowTitle(this.$router.getRoutes()
+            .find((route) => route.path === '/' + this.landingPage)
+            .meta.title
+          )
+        })
+    },
+
+    enableSearchSuggestions: function () {
+      return this.$store.getters.getEnableSearchSuggestions
     },
 
     searchSettings: function () {
@@ -52,10 +75,6 @@ export default defineComponent({
 
     barColor: function () {
       return this.$store.getters.getBarColor
-    },
-
-    currentInvidiousInstance: function () {
-      return this.$store.getters.getCurrentInvidiousInstance
     },
 
     backendFallback: function () {
@@ -70,21 +89,51 @@ export default defineComponent({
       return this.$store.getters.getExpandSideBar
     },
 
+    searchFilterValueChanged: function () {
+      return this.$store.getters.getSearchFilterValueChanged
+    },
+
+    navigationHistoryAddendum: function () {
+      if (this.navigationHistoryDropdownOptions.length === 0) {
+        return ''
+      }
+
+      return '\n' + this.$t('Right-click or hold to see history')
+    },
+
     forwardText: function () {
-      return this.$t('Forward')
+      return localizeAndAddKeyboardShortcutToActionTitle(
+        this.$t('Forward'),
+        KeyboardShortcuts.APP.GENERAL.HISTORY_FORWARD
+      ) + this.navigationHistoryAddendum
     },
 
     backwardText: function () {
-      return this.$t('Back')
+      return localizeAndAddKeyboardShortcutToActionTitle(
+        this.$t('Back'),
+        KeyboardShortcuts.APP.GENERAL.HISTORY_BACKWARD
+      ) + this.navigationHistoryAddendum
     },
 
     newWindowText: function () {
-      return this.$t('Open New Window')
+      return localizeAndAddKeyboardShortcutToActionTitle(
+        this.$t('Open New Window'),
+        KeyboardShortcuts.APP.GENERAL.NEW_WINDOW
+      )
     }
+  },
+  watch: {
+    $route: function () {
+      this.setNavigationHistoryDropdownOptions()
+      if ('navigation' in window) {
+        this.isArrowForwardDisabled = !window.navigation.canGoForward
+        this.isArrowBackwardDisabled = !window.navigation.canGoBack
+      }
+    },
   },
   mounted: function () {
     let previousWidth = window.innerWidth
-    if (window.innerWidth <= 680) {
+    if (window.innerWidth <= MOBILE_WIDTH_THRESHOLD) {
       this.showSearchContainer = false
     }
 
@@ -99,7 +148,7 @@ export default defineComponent({
       // Don't change the status of showSearchContainer if only the height of the window changes
       // Opening the virtual keyboard can trigger this resize event, but it won't change the width
       if (previousWidth !== window.innerWidth) {
-        this.showSearchContainer = window.innerWidth > 680
+        this.showSearchContainer = window.innerWidth > MOBILE_WIDTH_THRESHOLD
         previousWidth = window.innerWidth
       }
     })
@@ -107,19 +156,19 @@ export default defineComponent({
     this.debounceSearchResults = debounce(this.getSearchSuggestions, 200)
   },
   methods: {
-    goToSearch: async function (query, { event }) {
+    goToSearch: async function (queryText, { event }) {
       const doCreateNewWindow = event && event.shiftKey
 
-      if (window.innerWidth <= 680) {
+      if (window.innerWidth <= MOBILE_WIDTH_THRESHOLD) {
         this.$refs.searchContainer.blur()
         this.showSearchContainer = false
       } else {
-        this.searchInput.blur()
+        this.$refs.searchInput.blur()
       }
 
       clearLocalSearchSuggestionsSession()
 
-      this.getYoutubeUrlInfo(query).then((result) => {
+      this.getYoutubeUrlInfo(queryText).then((result) => {
         switch (result.urlType) {
           case 'video': {
             const { videoId, timestamp, playlistId } = result
@@ -135,7 +184,8 @@ export default defineComponent({
             openInternalPath({
               path: `/watch/${videoId}`,
               query,
-              doCreateNewWindow
+              doCreateNewWindow,
+              searchQueryText: queryText,
             })
             break
           }
@@ -146,7 +196,8 @@ export default defineComponent({
             openInternalPath({
               path: `/playlist/${playlistId}`,
               query,
-              doCreateNewWindow
+              doCreateNewWindow,
+              searchQueryText: queryText,
             })
             break
           }
@@ -158,29 +209,44 @@ export default defineComponent({
               path: `/search/${encodeURIComponent(searchQuery)}`,
               query,
               doCreateNewWindow,
-              searchQueryText: searchQuery
+              searchQueryText: searchQuery,
             })
             break
           }
 
           case 'hashtag': {
-            // TODO: Implement a hashtag related view
-            let message = 'Hashtags have not yet been implemented, try again later'
-            if (this.$t(message) && this.$t(message) !== '') {
-              message = this.$t(message)
-            }
+            const { hashtag } = result
+            openInternalPath({
+              path: `/hashtag/${encodeURIComponent(hashtag)}`,
+              doCreateNewWindow,
+              searchQueryText: `#${hashtag}`,
+            })
 
-            showToast(message)
+            break
+          }
+
+          case 'post': {
+            const { postId, query } = result
+
+            openInternalPath({
+              path: `/post/${postId}`,
+              query,
+              doCreateNewWindow,
+              searchQueryText: queryText,
+            })
             break
           }
 
           case 'channel': {
-            const { channelId, idType, subPath } = result
+            const { channelId, subPath, url } = result
 
             openInternalPath({
               path: `/channel/${channelId}/${subPath}`,
-              query: { idType },
-              doCreateNewWindow
+              doCreateNewWindow,
+              query: {
+                url,
+              },
+              searchQueryText: queryText,
             })
             break
           }
@@ -188,27 +254,37 @@ export default defineComponent({
           case 'invalid_url':
           default: {
             openInternalPath({
-              path: `/search/${encodeURIComponent(query)}`,
+              path: `/search/${encodeURIComponent(queryText)}`,
               query: {
                 sortBy: this.searchSettings.sortBy,
                 time: this.searchSettings.time,
                 type: this.searchSettings.type,
-                duration: this.searchSettings.duration
+                duration: this.searchSettings.duration,
+                features: this.searchSettings.features,
               },
               doCreateNewWindow,
-              searchQueryText: query
+              searchQueryText: queryText,
             })
           }
         }
-      })
 
-      // Close the filter panel
-      this.showFilters = false
+        if (doCreateNewWindow) {
+          // Query text copied to new window = can be removed from current window
+          this.updateSearchInputText('')
+        }
+      })
     },
 
     focusSearch: function () {
       if (!this.hideSearchBar) {
-        this.searchInput.focus()
+        // In order to prevent Klipper's "Synchronize contents of the clipboard
+        // and the selection" feature from being triggered when running
+        // Chromium on KDE Plasma, it seems both focus() focus and
+        // select() have to be called asynchronously (see issue #2019).
+        setTimeout(() => {
+          this.$refs.searchInput.focus()
+          this.$refs.searchInput.select()
+        }, 0)
       }
     },
 
@@ -262,7 +338,7 @@ export default defineComponent({
         this.searchSuggestionsDataList = results.suggestions
       }).catch((err) => {
         console.error(err)
-        if (process.env.IS_ELECTRON && this.backendFallback) {
+        if (process.env.SUPPORTS_LOCAL_API && this.backendFallback) {
           console.error(
             'Error gettings search suggestions.  Falling back to Local API'
           )
@@ -273,47 +349,70 @@ export default defineComponent({
 
     toggleSearchContainer: function () {
       this.showSearchContainer = !this.showSearchContainer
-      this.showFilters = false
     },
 
-    handleSearchFilterValueChanged: function (filterValueChanged) {
-      this.searchFilterValueChanged = filterValueChanged
-    },
-
-    navigateHistory: function () {
-      if (!this.isForwardOrBack) {
-        this.historyIndex = window.history.length
-        this.$refs.historyArrowBack.classList.remove('fa-arrow-left')
-        this.$refs.historyArrowForward.classList.add('fa-arrow-right')
+    getNavigationHistoryResultEndIndex: function (navigationHistoryActiveIndex, navigationHistoryLength) {
+      if (navigationHistoryActiveIndex < HALF_OF_NAV_HISTORY_DISPLAY_LIMIT) {
+        return Math.min(navigationHistoryLength - 1, NAV_HISTORY_DISPLAY_LIMIT - 1)
+      } else if (navigationHistoryLength - navigationHistoryActiveIndex < HALF_OF_NAV_HISTORY_DISPLAY_LIMIT + 1) {
+        return navigationHistoryLength - 1
       } else {
-        this.isForwardOrBack = false
+        return navigationHistoryActiveIndex + HALF_OF_NAV_HISTORY_DISPLAY_LIMIT
       }
     },
 
-    historyBack: function () {
-      this.isForwardOrBack = true
-      window.history.back()
+    getNavigationHistoryDropdownOptions: async function (ipcRenderer, navigationHistoryActiveIndex, navigationHistoryLength) {
+      const dropdownOptions = []
+      const end = this.getNavigationHistoryResultEndIndex(navigationHistoryActiveIndex, navigationHistoryLength)
 
-      if (this.historyIndex > 1) {
-        this.historyIndex--
-        this.$refs.historyArrowForward.classList.remove('fa-arrow-right')
-        if (this.historyIndex === 1) {
-          this.$refs.historyArrowBack.classList.add('fa-arrow-left')
+      for (let index = end; index >= Math.max(0, end + 1 - NAV_HISTORY_DISPLAY_LIMIT); --index) {
+        const routeLabel = await ipcRenderer.invoke(IpcChannels.GET_NAV_HISTORY_ENTRY_TITLE_AT_INDEX, index)
+        const isActiveIndex = index === navigationHistoryActiveIndex
+        const dropdownOption = {
+          label: routeLabel,
+          value: index - navigationHistoryActiveIndex,
+          active: isActiveIndex
         }
+
+        dropdownOptions.push(dropdownOption)
+
+        if (isActiveIndex) {
+          this.navigationHistoryDropdownActiveEntry = dropdownOption
+        }
+      }
+      return dropdownOptions
+    },
+
+    setNavigationHistoryDropdownOptions: async function() {
+      if (process.env.IS_ELECTRON) {
+        const { ipcRenderer } = require('electron')
+        const navigationHistoryLength = await ipcRenderer.invoke(IpcChannels.GET_NAV_HISTORY_LENGTH)
+        const navigationHistoryActiveIndex = await ipcRenderer.invoke(IpcChannels.GET_NAV_HISTORY_ACTIVE_INDEX)
+
+        this.navigationHistoryDropdownOptions = await this.getNavigationHistoryDropdownOptions(ipcRenderer, navigationHistoryActiveIndex, navigationHistoryLength)
       }
     },
 
-    historyForward: function () {
-      this.isForwardOrBack = true
-      window.history.forward()
+    goToOffset: function (offset) {
+      if (process.env.IS_ELECTRON) {
+        const { ipcRenderer } = require('electron')
+        ipcRenderer.send(IpcChannels.GO_TO_NAV_HISTORY_OFFSET, offset)
+      }
+    },
 
-      if (this.historyIndex < window.history.length) {
-        this.historyIndex++
-        this.$refs.historyArrowBack.classList.remove('fa-arrow-left')
+    historyBack: function (offset) {
+      if (offset != null) {
+        this.goToOffset(offset)
+      } else {
+        this.$router.back()
+      }
+    },
 
-        if (this.historyIndex === window.history.length) {
-          this.$refs.historyArrowForward.classList.add('fa-arrow-right')
-        }
+    historyForward: function (offset) {
+      if (offset != null) {
+        this.goToOffset(offset)
+      } else {
+        this.$router.forward()
       }
     },
 
@@ -332,14 +431,20 @@ export default defineComponent({
     navigate: function (route) {
       this.$router.push('/' + route)
     },
-    hideFilters: function () {
-      this.showFilters = false
-    },
     updateSearchInputText: function (text) {
       this.$refs.searchInput.updateInputData(text)
     },
+    setActiveNavigationHistoryEntryTitle(value) {
+      this.$nextTick(() => {
+        if (this.navigationHistoryDropdownActiveEntry?.label) {
+          this.navigationHistoryDropdownActiveEntry.label = value
+        }
+      })
+    },
+
     ...mapActions([
       'getYoutubeUrlInfo',
+      'showSearchFilters'
     ])
   }
 })

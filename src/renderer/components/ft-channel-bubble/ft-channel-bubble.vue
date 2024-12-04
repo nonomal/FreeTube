@@ -1,6 +1,33 @@
 <template>
-  <div
+  <router-link
+    v-if="!showSelected"
     class="bubblePadding"
+    :aria-labelledby="sanitizedId"
+    :to="`/channel/${channelId}`"
+  >
+    <img
+      v-if="channelThumbnail != null"
+      class="bubble"
+      :src="channelThumbnail"
+      alt=""
+    >
+    <font-awesome-icon
+      v-else
+      :icon="['fas', 'circle-user']"
+      class="bubble"
+      fixed-width
+    />
+    <div
+      :id="sanitizedId"
+      class="channelName"
+    >
+      {{ channelName }}
+    </div>
+  </router-link>
+  <div
+    v-else
+    class="bubblePadding"
+    role="button"
     tabindex="0"
     :aria-labelledby="sanitizedId"
     @click="handleClick"

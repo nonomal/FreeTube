@@ -1,6 +1,5 @@
 process.env.NODE_ENV = 'development'
 
-const open = require('open')
 const electron = require('electron')
 const webpack = require('webpack')
 const WebpackDevServer = require('webpack-dev-server')
@@ -8,6 +7,8 @@ const kill = require('tree-kill')
 
 const path = require('path')
 const { spawn } = require('child_process')
+
+const ProcessLocalesPlugin = require('./ProcessLocalesPlugin')
 
 let electronProcess = null
 let manualRestart = null
@@ -18,10 +19,14 @@ const web = process.argv.indexOf('--web') !== -1
 let mainConfig
 let rendererConfig
 let webConfig
+let SHAKA_LOCALES_TO_BE_BUNDLED
 
 if (!web) {
   mainConfig = require('./webpack.main.config')
   rendererConfig = require('./webpack.renderer.config')
+
+  SHAKA_LOCALES_TO_BE_BUNDLED = rendererConfig.SHAKA_LOCALES_TO_BE_BUNDLED
+  delete rendererConfig.SHAKA_LOCALES_TO_BE_BUNDLED
 } else {
   webConfig = require('./webpack.web.config')
 }
@@ -77,6 +82,22 @@ async function restartElectron() {
   })
 }
 
+/**
+ * @param {import('webpack').Compiler} compiler
+ * @param {WebpackDevServer} devServer
+ */
+function setupNotifyLocaleUpdate(compiler, devServer) {
+  const notifyLocaleChange = (updatedLocales) => {
+    devServer.sendMessage(devServer.webSocketServer.clients, 'freetube-locale-update', updatedLocales)
+  }
+
+  compiler.options.plugins
+    .filter(plugin => plugin instanceof ProcessLocalesPlugin)
+    .forEach((/** @type {ProcessLocalesPlugin} */plugin) => {
+      plugin.notifyLocaleChange = notifyLocaleChange
+    })
+}
+
 function startMain() {
   const compiler = webpack(mainConfig)
   const { name } = compiler
@@ -111,26 +132,40 @@ function startRenderer(callback) {
   })
 
   const server = new WebpackDevServer({
-    static: {
-      directory: path.join(process.cwd(), 'static'),
-      watch: {
-        ignored: [
-          /(dashFiles|storyboards)\/*/,
-          '/**/.DS_Store',
-        ]
+    static: [
+      {
+        directory: path.resolve(__dirname, '..', 'static'),
+        watch: {
+          ignored: [
+            /(dashFiles|storyboards)\/*/,
+            '/**/.DS_Store',
+            '**/static/locales/*'
+          ]
+        },
+        publicPath: '/static'
+      },
+      {
+        directory: path.resolve(__dirname, '..', 'node_modules', 'shaka-player', 'ui', 'locales'),
+        publicPath: '/static/shaka-player-locales',
+        watch: {
+          // Ignore everything that isn't one of the locales that we would bundle in production mode
+          ignored: `**/!(${SHAKA_LOCALES_TO_BE_BUNDLED.join('|')}).json`
+        }
       }
-    },
+    ],
     port
   }, compiler)
 
   server.startCallback(err => {
     if (err) console.error(err)
 
+    setupNotifyLocaleUpdate(compiler, server)
+
     callback()
   })
 }
 
-function startWeb (callback) {
+function startWeb () {
   const compiler = webpack(webConfig)
   const { name } = compiler
 
@@ -140,12 +175,14 @@ function startWeb (callback) {
   })
 
   const server = new WebpackDevServer({
+    open: true,
     static: {
-      directory: path.join(process.cwd(), 'dist/web/static'),
+      directory: path.resolve(__dirname, '..', 'static'),
       watch: {
         ignored: [
           /(dashFiles|storyboards)\/*/,
           '/**/.DS_Store',
+          '**/static/locales/*'
         ]
       }
     },
@@ -155,13 +192,11 @@ function startWeb (callback) {
   server.startCallback(err => {
     if (err) console.error(err)
 
-    callback({ port: server.options.port })
+    setupNotifyLocaleUpdate(compiler, server)
   })
 }
 if (!web) {
   startRenderer(startMain)
 } else {
-  startWeb(({ port }) => {
-    open(`http://localhost:${port}`)
-  })
+  startWeb()
 }

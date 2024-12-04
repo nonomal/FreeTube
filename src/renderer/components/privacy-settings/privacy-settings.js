@@ -22,9 +22,10 @@ export default defineComponent({
       showSearchCachePrompt: false,
       showRemoveHistoryPrompt: false,
       showRemoveSubscriptionsPrompt: false,
+      showRemovePlaylistsPrompt: false,
       promptValues: [
-        'yes',
-        'no'
+        'delete',
+        'cancel'
       ]
     }
   },
@@ -38,9 +39,6 @@ export default defineComponent({
     saveVideoHistoryWithLastViewedPlaylist: function () {
       return this.$store.getters.getSaveVideoHistoryWithLastViewedPlaylist
     },
-    removeVideoMetaFiles: function () {
-      return this.$store.getters.getRemoveVideoMetaFiles
-    },
 
     profileList: function () {
       return this.$store.getters.getProfileList
@@ -50,8 +48,8 @@ export default defineComponent({
     },
     promptNames: function () {
       return [
-        this.$t('Yes'),
-        this.$t('No')
+        this.$t('Yes, Delete'),
+        this.$t('Cancel')
       ]
     }
   },
@@ -59,10 +57,10 @@ export default defineComponent({
     handleSearchCache: function (option) {
       this.showSearchCachePrompt = false
 
-      if (option === 'yes') {
-        this.clearSessionSearchHistory()
-        showToast(this.$t('Settings.Privacy Settings.Search cache has been cleared'))
-      }
+      if (option !== 'delete') { return }
+
+      this.clearSessionSearchHistory()
+      showToast(this.$t('Settings.Privacy Settings.Search cache has been cleared'))
     },
 
     handleRememberHistory: function (value) {
@@ -73,20 +71,13 @@ export default defineComponent({
       this.updateRememberHistory(value)
     },
 
-    handleVideoMetaFiles: function (value) {
-      if (!value) {
-        this.updateRemoveVideoMetaFiles(false)
-      }
-      this.updateRemoveVideoMetaFiles(value)
-    },
-
     handleRemoveHistory: function (option) {
       this.showRemoveHistoryPrompt = false
 
-      if (option === 'yes') {
-        this.removeAllHistory()
-        showToast(this.$t('Settings.Privacy Settings.Watch history has been cleared'))
-      }
+      if (option !== 'delete') { return }
+
+      this.removeAllHistory()
+      showToast(this.$t('Settings.Privacy Settings.Watch history has been cleared'))
     },
 
     handleRemoveSubscriptions: function (option) {
@@ -94,34 +85,38 @@ export default defineComponent({
 
       this.updateActiveProfile(MAIN_PROFILE_ID)
 
-      if (option === 'yes') {
-        this.profileList.forEach((profile) => {
-          if (profile._id === MAIN_PROFILE_ID) {
-            const newProfile = {
-              _id: MAIN_PROFILE_ID,
-              name: profile.name,
-              bgColor: profile.bgColor,
-              textColor: profile.textColor,
-              subscriptions: []
-            }
-            this.updateProfile(newProfile)
-          } else {
-            this.removeProfile(profile._id)
-          }
-        })
+      if (option !== 'delete') { return }
 
-        this.updateAllSubscriptionsList([])
-        this.updateProfileSubscriptions({
-          activeProfile: MAIN_PROFILE_ID,
-          videoList: [],
-          errorChannels: []
-        })
-      }
+      this.profileList.forEach((profile) => {
+        if (profile._id === MAIN_PROFILE_ID) {
+          const newProfile = {
+            _id: MAIN_PROFILE_ID,
+            name: profile.name,
+            bgColor: profile.bgColor,
+            textColor: profile.textColor,
+            subscriptions: []
+          }
+          this.updateProfile(newProfile)
+        } else {
+          this.removeProfile(profile._id)
+        }
+      })
+
+      this.clearSubscriptionsCache()
+    },
+
+    handleRemovePlaylists: function (option) {
+      this.showRemovePlaylistsPrompt = false
+
+      if (option !== 'delete') { return }
+
+      this.removeAllPlaylists()
+      this.updateQuickBookmarkTargetPlaylistId('favorites')
+      showToast(this.$t('Settings.Privacy Settings.All playlists have been removed'))
     },
 
     ...mapActions([
       'updateRememberHistory',
-      'updateRemoveVideoMetaFiles',
       'removeAllHistory',
       'updateSaveWatchedProgress',
       'updateSaveVideoHistoryWithLastViewedPlaylist',
@@ -129,8 +124,11 @@ export default defineComponent({
       'updateProfile',
       'removeProfile',
       'updateActiveProfile',
+      'clearSubscriptionsCache',
       'updateAllSubscriptionsList',
-      'updateProfileSubscriptions'
+      'updateProfileSubscriptions',
+      'removeAllPlaylists',
+      'updateQuickBookmarkTargetPlaylistId',
     ])
   }
 })

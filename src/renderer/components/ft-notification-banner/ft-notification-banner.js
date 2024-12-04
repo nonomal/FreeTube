@@ -8,11 +8,7 @@ export default defineComponent({
       required: true
     }
   },
-  computed: {
-    progressBarPercentage: function () {
-      return this.$store.getters.getProgressBarPercentage
-    }
-  },
+  emits: ['click'],
   methods: {
     handleClick: function (response) {
       this.$emit('click', response)
