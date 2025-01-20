@@ -1,6 +1,6 @@
 import { defineComponent } from 'vue'
 import { mapActions } from 'vuex'
-import FtSettingsSection from '../ft-settings-section/ft-settings-section.vue'
+import FtSettingsSection from '../FtSettingsSection/FtSettingsSection.vue'
 import FtSelect from '../ft-select/ft-select.vue'
 import FtToggleSwitch from '../ft-toggle-switch/ft-toggle-switch.vue'
 import FtSlider from '../ft-slider/ft-slider.vue'
@@ -8,7 +8,6 @@ import FtFlexBox from '../ft-flex-box/ft-flex-box.vue'
 import FtButton from '../ft-button/ft-button.vue'
 import FtInput from '../ft-input/ft-input.vue'
 import FtTooltip from '../ft-tooltip/ft-tooltip.vue'
-import { ipcRenderer } from 'electron'
 import { IpcChannels } from '../../../constants'
 import path from 'path'
 import { getPicturesPath } from '../../helpers/utils'
@@ -27,19 +26,22 @@ export default defineComponent({
   },
   data: function () {
     return {
+      usingElectron: process.env.IS_ELECTRON,
       formatValues: [
         'dash',
         'legacy',
         'audio'
       ],
       qualityValues: [
-        'auto',
-        144,
-        240,
-        360,
-        480,
+        2160,
+        1440,
+        1080,
         720,
-        1080
+        480,
+        360,
+        240,
+        144,
+        'auto'
       ],
       playbackRateIntervalValues: [
         0.1,
@@ -49,20 +51,26 @@ export default defineComponent({
       ],
       screenshotFormatNames: [
         'PNG',
-        'JPEG'
+        'JPEG',
+        'WebP'
       ],
       screenshotFormatValues: [
         'png',
-        'jpg'
+        'jpg',
+        'webp'
       ],
       screenshotFolderPlaceholder: '',
       screenshotFilenameExample: '',
-      screenshotDefaultPattern: '%Y%M%D-%H%N%S'
+      screenshotDefaultPattern: '%Y%M%D-%H%N%S',
     }
   },
   computed: {
     backendPreference: function () {
       return this.$store.getters.getBackendPreference
+    },
+
+    backendFallback: function () {
+      return this.$store.getters.getBackendFallback
     },
 
     autoplayVideos: function () {
@@ -77,16 +85,20 @@ export default defineComponent({
       return this.$store.getters.getPlayNextVideo
     },
 
-    enableSubtitles: function () {
-      return this.$store.getters.getEnableSubtitles
-    },
-
-    forceLocalBackendForLegacy: function () {
-      return this.$store.getters.getForceLocalBackendForLegacy
+    enableSubtitlesByDefault: function () {
+      return this.$store.getters.getEnableSubtitlesByDefault
     },
 
     proxyVideos: function () {
       return this.$store.getters.getProxyVideos
+    },
+
+    showProxyVideosAsDisabled: function () {
+      return this.backendPreference !== 'invidious' && !this.backendFallback
+    },
+
+    defaultAutoplayInterruptionIntervalHours: function () {
+      return parseInt(this.$store.getters.getDefaultAutoplayInterruptionIntervalHours)
     },
 
     defaultSkipInterval: function () {
@@ -111,10 +123,6 @@ export default defineComponent({
 
     defaultQuality: function () {
       return this.$store.getters.getDefaultQuality
-    },
-
-    allowDashAv1Formats: function () {
-      return this.$store.getters.getAllowDashAv1Formats
     },
 
     defaultTheatreMode: function () {
@@ -163,13 +171,15 @@ export default defineComponent({
 
     qualityNames: function () {
       return [
-        this.$t('Settings.Player Settings.Default Quality.Auto'),
-        this.$t('Settings.Player Settings.Default Quality.144p'),
-        this.$t('Settings.Player Settings.Default Quality.240p'),
-        this.$t('Settings.Player Settings.Default Quality.360p'),
-        this.$t('Settings.Player Settings.Default Quality.480p'),
+        this.$t('Settings.Player Settings.Default Quality.4k'),
+        this.$t('Settings.Player Settings.Default Quality.1440p'),
+        this.$t('Settings.Player Settings.Default Quality.1080p'),
         this.$t('Settings.Player Settings.Default Quality.720p'),
-        this.$t('Settings.Player Settings.Default Quality.1080p')
+        this.$t('Settings.Player Settings.Default Quality.480p'),
+        this.$t('Settings.Player Settings.Default Quality.360p'),
+        this.$t('Settings.Player Settings.Default Quality.240p'),
+        this.$t('Settings.Player Settings.Default Quality.144p'),
+        this.$t('Settings.Player Settings.Default Quality.Auto')
       ]
     },
 
@@ -195,12 +205,16 @@ export default defineComponent({
 
     screenshotFilenamePattern: function() {
       return this.$store.getters.getScreenshotFilenamePattern
-    }
+    },
+
+    hideComments: function () {
+      return this.$store.getters.getHideComments
+    },
   },
   watch: {
     screenshotFolder: function() {
       this.getScreenshotFolderPlaceholder()
-    }
+    },
   },
   mounted: function() {
     this.getScreenshotFolderPlaceholder()
@@ -213,7 +227,11 @@ export default defineComponent({
     },
 
     getScreenshotEmptyFolderPlaceholder: async function() {
-      return path.join(await getPicturesPath(), 'Freetube')
+      if (process.env.IS_ELECTRON) {
+        return path.join(await getPicturesPath(), 'Freetube')
+      } else {
+        return ''
+      }
     },
 
     getScreenshotFolderPlaceholder: function() {
@@ -221,21 +239,26 @@ export default defineComponent({
         this.screenshotFolderPlaceholder = this.screenshotFolder
         return
       }
-      this.getScreenshotEmptyFolderPlaceholder().then((res) => {
-        this.screenshotFolderPlaceholder = res
-      })
+      if (process.env.IS_ELECTRON) {
+        this.getScreenshotEmptyFolderPlaceholder().then((res) => {
+          this.screenshotFolderPlaceholder = res
+        })
+      }
     },
 
     chooseScreenshotFolder: async function() {
       // only use with electron
-      const folder = await ipcRenderer.invoke(
-        IpcChannels.SHOW_OPEN_DIALOG,
-        { properties: ['openDirectory'] }
-      )
+      if (process.env.IS_ELECTRON) {
+        const { ipcRenderer } = require('electron')
+        const folder = await ipcRenderer.invoke(
+          IpcChannels.SHOW_OPEN_DIALOG,
+          { properties: ['openDirectory'] }
+        )
 
-      if (!folder.canceled) {
-        await this.updateScreenshotFolderPath(folder.filePaths[0])
-        this.getScreenshotFolderPlaceholder()
+        if (!folder.canceled) {
+          await this.updateScreenshotFolderPath(folder.filePaths[0])
+          this.getScreenshotFolderPlaceholder()
+        }
       }
     },
 
@@ -254,14 +277,14 @@ export default defineComponent({
     getScreenshotFilenameExample: function(pattern) {
       return this.parseScreenshotCustomFileName({
         pattern: pattern || this.screenshotDefaultPattern,
-        date: new Date(Date.now()),
+        date: new Date(),
         playerTime: 123.456,
         videoId: 'dQw4w9WgXcQ'
       }).then(res => {
         this.screenshotFilenameExample = `${res}.${this.screenshotFormat}`
         return true
       }).catch(err => {
-        this.screenshotFilenameExample = `❗ ${this.$t(`Settings.Player Settings.Screenshot.Error.${err.message}`)}`
+        this.screenshotFilenameExample = `❗ ${err.message}`
         return false
       })
     },
@@ -269,9 +292,9 @@ export default defineComponent({
     ...mapActions([
       'updateAutoplayVideos',
       'updateAutoplayPlaylists',
+      'updateDefaultAutoplayInterruptionIntervalHours',
       'updatePlayNextVideo',
-      'updateEnableSubtitles',
-      'updateForceLocalBackendForLegacy',
+      'updateEnableSubtitlesByDefault',
       'updateProxyVideos',
       'updateDefaultTheatreMode',
       'updateDefaultSkipInterval',
@@ -280,7 +303,6 @@ export default defineComponent({
       'updateDefaultPlayback',
       'updateDefaultVideoFormat',
       'updateDefaultQuality',
-      'updateAllowDashAv1Formats',
       'updateVideoVolumeMouseScroll',
       'updateVideoPlaybackRateMouseScroll',
       'updateVideoSkipMouseScroll',

@@ -12,5 +12,23 @@
       "less",
       "postcss",
       "scss"
-  ]
+  ],
+  "eslint.packageManager": "yarn",
+  "eslint.probe": [
+      "javascript",
+      "vue",
+      "json",
+      "jsonc",
+      "yml",
+      "yaml"
+  ],
+  "eslint.validate": [
+    "javascript",
+    "vue",
+    "json",
+    "jsonc",
+    "yml",
+    "yaml"
+  ],
+  "javascript.preferences.importModuleSpecifier": "relative"
 }

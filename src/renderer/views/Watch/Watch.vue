@@ -3,7 +3,7 @@
     class="videoLayout"
     :class="{
       isLoading,
-      useTheatreMode,
+      useTheatreMode: useTheatreMode && !isLoading,
       noSidebar: !theatrePossible
     }"
   >
@@ -16,37 +16,47 @@
       class="videoArea"
     >
       <div class="videoAreaMargin">
-        <ft-video-player
-          v-if="!isLoading && !hidePlayer && !isUpcoming"
-          ref="videoPlayer"
-          :dash-src="dashSrc"
-          :source-list="activeSourceList"
-          :adaptive-formats="adaptiveFormats"
-          :caption-hybrid-list="captionHybridList"
+        <ft-shaka-video-player
+          v-if="!isLoading && !isUpcoming && !errorMessage"
+          ref="player"
+          :manifest-src="manifestSrc"
+          :manifest-mime-type="manifestMimeType"
+          :legacy-formats="legacyFormats"
+          :start-time="startTimeSeconds"
+          :captions="captions"
           :storyboard-src="videoStoryboardSrc"
           :format="activeFormat"
           :thumbnail="thumbnail"
           :video-id="videoId"
-          :length-seconds="videoLengthSeconds"
           :chapters="videoChapters"
+          :current-chapter-index="videoCurrentChapterIndex"
+          :title="videoTitle"
+          :theatre-possible="theatrePossible"
+          :use-theatre-mode="useTheatreMode"
+          :autoplay-possible="autoplayPossible"
+          :autoplay-enabled="autoplayEnabled"
+          :vr-projection="vrProjection"
+          :current-playback-rate="currentPlaybackRate"
           class="videoPlayer"
-          :class="{ theatrePlayer: useTheatreMode }"
-          @ready="checkIfWatched"
+          @error="handlePlayerError"
+          @loaded="handleVideoLoaded"
+          @timeupdate="updateCurrentChapter"
           @ended="handleVideoEnded"
-          @error="handleVideoError"
-          @store-caption-list="captionHybridList = $event"
-          v-on="!hideChapters && videoChapters.length > 0 ? { timeupdate: updateCurrentChapter } : {}"
+          @toggle-theatre-mode="useTheatreMode = !useTheatreMode"
+          @toggle-autoplay="toggleAutoplay"
+          @playback-rate-updated="updatePlaybackRate"
         />
         <div
-          v-if="!isLoading && isUpcoming"
+          v-if="!isLoading && (isUpcoming || errorMessage)"
           class="videoPlayer"
         >
           <img
             :src="thumbnail"
-            class="upcomingThumbnail"
+            class="videoThumbnail"
             alt=""
           >
           <div
+            v-if="isUpcoming"
             class="premiereDate"
           >
             <font-awesome-icon
@@ -76,13 +86,31 @@
               {{ $t("Video.Starting soon, please refresh the page to check again") }}
             </p>
           </div>
+          <div
+            v-else-if="errorMessage"
+            class="errorContainer"
+          >
+            <div
+              class="errorWrapper"
+            >
+              <font-awesome-icon
+                :icon="customErrorIcon || ['fas', 'exclamation-circle']"
+                aria-hidden="true"
+                class="errorIcon"
+              />
+              <p
+                class="errorMessage"
+              >
+                {{ errorMessage }}
+              </p>
+            </div>
+          </div>
         </div>
       </div>
     </div>
     <ft-age-restricted
       v-if="(!isLoading && !isFamilyFriendly && showFamilyFriendlyOnly)"
       class="ageRestricted"
-      :content-type-string="'Video'"
     />
     <div
       v-if="(isFamilyFriendly || !showFamilyFriendlyOnly)"
@@ -93,11 +121,13 @@
       <watch-video-info
         v-if="!isLoading"
         :id="videoId"
+        :is-unlisted="isUnlisted"
         :title="videoTitle"
         :channel-id="channelId"
         :channel-name="channelName"
         :channel-thumbnail="channelThumbnail"
         :published="videoPublished"
+        :premiere-date="premiereDate"
         :subscription-count-text="channelSubscriptionCountText"
         :like-count="videoLikeCount"
         :dislike-count="videoDislikeCount"
@@ -108,43 +138,45 @@
         :is-upcoming="isUpcoming"
         :download-links="downloadLinks"
         :playlist-id="playlistId"
-        :watching-playlist="watchingPlaylist"
         :get-playlist-index="getPlaylistIndex"
         :get-playlist-reverse="getPlaylistReverse"
         :get-playlist-shuffle="getPlaylistShuffle"
         :get-playlist-loop="getPlaylistLoop"
-        :theatre-possible="theatrePossible"
         :length-seconds="videoLengthSeconds"
         :video-thumbnail="thumbnail"
+        :in-user-playlist="!!selectedUserPlaylist"
         class="watchVideo"
         :class="{ theatreWatchVideo: useTheatreMode }"
+        @change-format="handleFormatChange"
         @pause-player="pausePlayer"
+        @set-info-area-sticky="infoAreaSticky = $event"
+        @scroll-to-info-area="$refs.infoArea.scrollIntoView()"
       />
       <watch-video-chapters
         v-if="!hideChapters && !isLoading && videoChapters.length > 0"
-        :compact="backendPreference === 'invidious'"
         :chapters="videoChapters"
         :current-chapter-index="videoCurrentChapterIndex"
+        :kind="videoChaptersKind"
         class="watchVideo"
         :class="{ theatreWatchVideo: useTheatreMode }"
         @timestamp-event="changeTimestamp"
       />
       <watch-video-description
         v-if="!isLoading && !hideVideoDescription"
-        :published="videoPublished"
         :description="videoDescription"
         :description-html="videoDescriptionHtml"
         class="watchVideo"
         :class="{ theatreWatchVideo: useTheatreMode }"
         @timestamp-event="changeTimestamp"
       />
-      <watch-video-comments
+      <CommentSection
         v-if="!isLoading && !isLive && !hideComments"
         :id="videoId"
         class="watchVideo"
         :class="{ theatreWatchVideo: useTheatreMode }"
         :channel-thumbnail="channelThumbnail"
         :channel-name="channelName"
+        :video-player-ready="videoPlayerLoaded"
         @timestamp-event="changeTimestamp"
       />
     </div>
@@ -153,7 +185,7 @@
       class="sidebarArea"
     >
       <watch-video-live-chat
-        v-if="!isLoading && !hideLiveChat && isLive"
+        v-if="!isLoading && !hideLiveChat && (isLive || isUpcoming)"
         :live-chat="liveChat"
         :video-id="videoId"
         :channel-id="channelId"
@@ -164,15 +196,17 @@
         v-if="watchingPlaylist"
         v-show="!isLoading"
         ref="watchVideoPlaylist"
+        :watch-view-loading="isLoading"
         :playlist-id="playlistId"
+        :playlist-type="playlistType"
         :video-id="videoId"
+        :playlist-item-id="playlistItemId"
         class="watchVideoSideBar watchVideoPlaylist"
         :class="{ theatrePlaylist: useTheatreMode }"
         @pause-player="pausePlayer"
       />
       <watch-video-recommendations
-        v-if="!isLoading"
-        :show-autoplay="!watchingPlaylist"
+        v-if="!isLoading && !hideRecommendedVideos"
         :data="recommendedVideos"
         class="watchVideoSideBar watchVideoRecommendations"
         :class="{

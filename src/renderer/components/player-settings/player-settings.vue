@@ -5,26 +5,18 @@
     <div class="switchColumnGrid">
       <div class="switchColumn">
         <ft-toggle-switch
-          v-if="false"
-          label="Enable Subtitles by Default"
-          :compact="true"
-          :default-value="enableSubtitles"
-          @change="updateEnableSubtitles"
-        />
-        <ft-toggle-switch
-          :label="$t('Settings.Player Settings.Force Local Backend for Legacy Formats')"
-          :compact="true"
-          :disabled="backendPreference === 'local'"
-          :default-value="forceLocalBackendForLegacy"
-          :tooltip="$t('Tooltips.Player Settings.Force Local Backend for Legacy Formats')"
-          @change="updateForceLocalBackendForLegacy"
-        />
-        <ft-toggle-switch
           :label="$t('Settings.Player Settings.Proxy Videos Through Invidious')"
           :compact="true"
-          :default-value="proxyVideos"
+          :default-value="showProxyVideosAsDisabled ? false : proxyVideos"
+          :disabled="showProxyVideosAsDisabled"
           :tooltip="$t('Tooltips.Player Settings.Proxy Videos Through Invidious')"
           @change="updateProxyVideos"
+        />
+        <ft-toggle-switch
+          :label="$t('Settings.Player Settings.Turn on Subtitles by Default')"
+          :compact="true"
+          :default-value="enableSubtitlesByDefault"
+          @change="updateEnableSubtitlesByDefault"
         />
         <ft-toggle-switch
           :label="$t('Settings.Player Settings.Enable Theatre Mode by Default')"
@@ -57,10 +49,11 @@
       </div>
       <div class="switchColumn">
         <ft-toggle-switch
-          :label="$t('Settings.Player Settings.Autoplay Videos')"
+          :label="$t('Settings.Player Settings.Play Next Video')"
           :compact="true"
-          :default-value="autoplayVideos"
-          @change="updateAutoplayVideos"
+          :disabled="hideRecommendedVideos"
+          :default-value="playNextVideo"
+          @change="updatePlayNextVideo"
         />
         <ft-toggle-switch
           :label="$t('Settings.Player Settings.Autoplay Playlists')"
@@ -69,11 +62,10 @@
           @change="updateAutoplayPlaylists"
         />
         <ft-toggle-switch
-          :label="$t('Settings.Player Settings.Play Next Video')"
+          :label="$t('Settings.Player Settings.Autoplay Videos')"
           :compact="true"
-          :disabled="hideRecommendedVideos"
-          :default-value="playNextVideo"
-          @change="updatePlayNextVideo"
+          :default-value="autoplayVideos"
+          @change="updateAutoplayVideos"
         />
         <ft-toggle-switch
           :label="$t('Settings.Player Settings.Display Play Button In Video Player')"
@@ -91,15 +83,6 @@
     </div>
     <ft-flex-box>
       <ft-slider
-        :label="$t('Settings.Player Settings.Fast-Forward / Rewind Interval')"
-        :default-value="defaultSkipInterval"
-        :min-value="1"
-        :max-value="70"
-        :step="1"
-        value-extension="s"
-        @change="updateDefaultSkipInterval"
-      />
-      <ft-slider
         :label="$t('Settings.Player Settings.Next Video Interval')"
         :default-value="defaultInterval"
         :min-value="0"
@@ -107,6 +90,24 @@
         :step="1"
         value-extension="s"
         @change="updateDefaultInterval"
+      />
+      <ft-slider
+        :label="$t('Settings.Player Settings.Autoplay Interruption Timer')"
+        :default-value="defaultAutoplayInterruptionIntervalHours"
+        :min-value="1"
+        :max-value="12"
+        :step="1"
+        value-extension="h"
+        @change="updateDefaultAutoplayInterruptionIntervalHours"
+      />
+      <ft-slider
+        :label="$t('Settings.Player Settings.Fast-Forward / Rewind Interval')"
+        :default-value="defaultSkipInterval"
+        :min-value="1"
+        :max-value="70"
+        :step="1"
+        value-extension="s"
+        @change="updateDefaultSkipInterval"
       />
       <ft-slider
         :label="$t('Settings.Player Settings.Default Volume')"
@@ -120,10 +121,10 @@
       <ft-slider
         :label="$t('Settings.Player Settings.Default Playback Rate')"
         :default-value="defaultPlayback"
-        :min-value="0.25"
+        :min-value="parseFloat(videoPlaybackRateInterval)"
         :max-value="8"
-        :step="0.25"
-        value-extension="×"
+        :step="parseFloat(videoPlaybackRateInterval)"
+        value-extension="x"
         @change="updateDefaultPlayback"
       />
       <ft-slider
@@ -140,6 +141,7 @@
         :value="videoPlaybackRateInterval"
         :select-names="playbackRateIntervalValues"
         :select-values="playbackRateIntervalValues"
+        :icon="['fas', 'gauge']"
         @change="updateVideoPlaybackRateInterval"
       />
     </ft-flex-box>
@@ -150,6 +152,7 @@
         :select-names="formatNames"
         :select-values="formatValues"
         :tooltip="$t('Tooltips.Player Settings.Default Video Format')"
+        :icon="['fas', 'file-video']"
         @change="updateDefaultVideoFormat"
       />
       <ft-select
@@ -157,15 +160,8 @@
         :value="defaultQuality"
         :select-names="qualityNames"
         :select-values="qualityValues"
+        :icon="['fas', 'photo-film']"
         @change="updateDefaultQuality"
-      />
-      <ft-toggle-switch
-        class="av1Switch"
-        :label="$t('Settings.Player Settings.Allow DASH AV1 formats')"
-        :compact="true"
-        :default-value="allowDashAv1Formats"
-        :tooltip="$t('Tooltips.Player Settings.Allow DASH AV1 formats')"
-        @change="updateAllowDashAv1Formats"
       />
     </ft-flex-box>
     <br>
@@ -183,6 +179,7 @@
           :value="screenshotFormat"
           :select-names="screenshotFormatNames"
           :select-values="screenshotFormatValues"
+          :icon="['fas', 'file-image']"
           @change="handleUpdateScreenshotFormat"
         />
         <ft-slider
@@ -192,11 +189,11 @@
           :max-value="100"
           :step="1"
           value-extension="%"
-          :disabled="screenshotFormat !== 'jpg'"
+          :disabled="screenshotFormat === 'png'"
           @change="updateScreenshotQuality"
         />
       </ft-flex-box>
-      <ft-flex-box>
+      <ft-flex-box v-if="usingElectron">
         <ft-toggle-switch
           :label="$t('Settings.Player Settings.Screenshot.Ask Path')"
           :default-value="screenshotAskPath"
@@ -204,7 +201,7 @@
         />
       </ft-flex-box>
       <ft-flex-box
-        v-if="!screenshotAskPath"
+        v-if="usingElectron && !screenshotAskPath"
         class="screenshotFolderContainer"
       >
         <p class="screenshotFolderLabel">
@@ -223,7 +220,9 @@
           @click="chooseScreenshotFolder"
         />
       </ft-flex-box>
-      <ft-flex-box class="screenshotFolderContainer">
+      <ft-flex-box
+        class="screenshotFolderContainer"
+      >
         <p class="screenshotFilenamePatternTitle">
           {{ $t('Settings.Player Settings.Screenshot.File Name Label') }}
           <ft-tooltip
@@ -236,22 +235,22 @@
           class="screenshotFilenamePatternInput"
           placeholder=""
           :value="screenshotFilenamePattern"
-          :spellcheck="false"
           :show-action-button="false"
           :show-label="false"
           @input="handleScreenshotFilenamePatternChanged"
         />
         <ft-input
           class="screenshotFilenamePatternExample"
-          :placeholder="`${screenshotFilenameExample}`"
+          :placeholder="screenshotFilenameExample"
           :show-action-button="false"
           :show-label="false"
           :disabled="true"
         />
       </ft-flex-box>
+      <br>
     </div>
   </ft-settings-section>
 </template>
 
 <script src="./player-settings.js" />
-<style scoped lang="scss" src="./player-settings.scss" />
+<style scoped src="./player-settings.css" />

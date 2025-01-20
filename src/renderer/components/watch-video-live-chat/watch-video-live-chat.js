@@ -1,4 +1,4 @@
-import { defineComponent } from 'vue'
+import { defineComponent, nextTick } from 'vue'
 import FtLoader from '../ft-loader/ft-loader.vue'
 import FtCard from '../ft-card/ft-card.vue'
 import FtButton from '../ft-button/ft-button.vue'
@@ -6,6 +6,7 @@ import FtButton from '../ft-button/ft-button.vue'
 import autolinker from 'autolinker'
 import { getRandomColorClass } from '../../helpers/colors'
 import { getLocalVideoInfo, parseLocalTextRuns } from '../../helpers/api/local'
+import { formatNumber } from '../../helpers/utils'
 
 export default defineComponent({
   name: 'WatchVideoLiveChat',
@@ -30,6 +31,7 @@ export default defineComponent({
   },
   data: function () {
     return {
+      /** @type {import('youtubei.js').YT.LiveChat|null} */
       liveChatInstance: null,
       isLoading: true,
       hasError: false,
@@ -52,7 +54,9 @@ export default defineComponent({
           amount: '',
           colorClass: ''
         }
-      }
+      },
+      /** @type {number|null} */
+      watchingCount: null,
     }
   },
   computed: {
@@ -74,6 +78,14 @@ export default defineComponent({
 
     scrollingBehaviour: function () {
       return this.$store.getters.getDisableSmoothScrolling ? 'auto' : 'smooth'
+    },
+
+    hideVideoViews: function () {
+      return this.$store.getters.getHideVideoViews
+    },
+
+    formattedWatchingCount: function () {
+      return this.watchingCount !== null ? formatNumber(this.watchingCount) : '0'
     }
   },
   beforeDestroy: function () {
@@ -82,21 +94,26 @@ export default defineComponent({
     this.liveChatInstance = null
   },
   created: function () {
-    if (!process.env.IS_ELECTRON) {
+    if (!process.env.SUPPORTS_LOCAL_API) {
       this.hasError = true
       this.errorMessage = this.$t('Video["Live Chat is currently not supported in this build."]')
+      this.isLoading = false
     } else {
       switch (this.backendPreference) {
         case 'local':
-          this.liveChatInstance = this.liveChat
-          this.startLiveChatLocal()
+          if (this.liveChat) {
+            this.liveChatInstance = this.liveChat
+            this.startLiveChatLocal()
+          } else {
+            this.showLiveChatUnavailable()
+          }
           break
         case 'invidious':
           if (this.backendFallback) {
             this.getLiveChatLocal()
           } else {
             this.hasError = true
-            this.errorMessage = this.$t('Video["Live Chat is currently not supported with the Invidious API.  A direct connection to YouTube is required."]')
+            this.errorMessage = this.$t('Video["Live Chat is currently not supported with the Invidious API. A direct connection to YouTube is required."]')
             this.showEnableChat = true
             this.isLoading = false
           }
@@ -114,9 +131,21 @@ export default defineComponent({
 
     getLiveChatLocal: async function () {
       const videoInfo = await getLocalVideoInfo(this.videoId)
-      this.liveChatInstance = videoInfo.getLiveChat()
 
-      this.startLiveChatLocal()
+      if (videoInfo.livechat) {
+        this.liveChatInstance = videoInfo.getLiveChat()
+
+        this.startLiveChatLocal()
+      } else {
+        this.showLiveChatUnavailable()
+      }
+    },
+
+    showLiveChatUnavailable: function () {
+      this.hasError = true
+      this.errorMessage = this.$t('Video["Live Chat is unavailable for this stream. It may have been disabled by the uploader."]')
+      this.isLoading = false
+      this.showEnableChat = false
     },
 
     startLiveChatLocal: function () {
@@ -140,7 +169,7 @@ export default defineComponent({
 
         this.isLoading = false
 
-        setTimeout(() => {
+        nextTick(() => {
           this.$refs.liveChatComments?.scrollTo({
             top: this.$refs.liveChatComments.scrollHeight,
             behavior: 'instant'
@@ -164,6 +193,12 @@ export default defineComponent({
         }
       })
 
+      this.liveChatInstance.on('metadata-update', metadata => {
+        if (!this.hideVideoViews && metadata.views && !isNaN(metadata.views.original_view_count)) {
+          this.watchingCount = metadata.views.original_view_count
+        }
+      })
+
       this.liveChatInstance.once('end', () => {
         this.hasEnded = true
         this.liveChatInstance = null
@@ -183,19 +218,19 @@ export default defineComponent({
     },
 
     /**
-     * @param {import('youtubei.js/dist/src/parser/classes/livechat/items/LiveChatTextMessage').default} comment
+     * @param {import('youtubei.js').YTNodes.LiveChatTextMessage} comment
      */
     parseLiveChatComment: function (comment) {
       /**
        * can also be undefined if there is no badge
-       * @type {import('youtubei.js/dist/src/parser/classes/LiveChatAuthorBadge').default}
+       * @type {import('youtubei.js').YTNodes.LiveChatAuthorBadge}
        */
       const badge = comment.author.badges.find(badge => badge.type === 'LiveChatAuthorBadge' && badge.custom_thumbnail)
 
       const parsedComment = {
         message: autolinker.link(parseLocalTextRuns(comment.message.runs, 20)),
         author: {
-          name: comment.author.name.text,
+          name: comment.author.name,
           thumbnailUrl: comment.author.thumbnails.at(-1).url,
           isOwner: comment.author.id === this.channelId,
           isModerator: comment.author.is_moderator,
@@ -205,7 +240,7 @@ export default defineComponent({
 
       if (badge) {
         parsedComment.badge = {
-          url: badge.custom_thumbnail.at(-1).url,
+          url: badge.custom_thumbnail.at(-1)?.url,
           tooltip: badge.tooltip ?? ''
         }
       }
@@ -214,7 +249,7 @@ export default defineComponent({
     },
 
     /**
-     * @param {import('youtubei.js/dist/src/parser/classes/livechat/items/LiveChatPaidMessage').default} superChat
+     * @param {import('youtubei.js').YTNodes.LiveChatPaidMessage} superChat
      */
     parseLiveChatSuperChat: function (superChat) {
       const parsedComment = {
@@ -243,7 +278,7 @@ export default defineComponent({
       this.comments.push(comment)
 
       if (!this.isLoading && this.stayAtBottom) {
-        setTimeout(() => {
+        nextTick(() => {
           this.$refs.liveChatComments?.scrollTo({
             top: this.$refs.liveChatComments.scrollHeight,
             behavior: this.scrollingBehaviour
@@ -271,7 +306,7 @@ export default defineComponent({
       }
     },
 
-    onScroll: function (event) {
+    onScroll: function (event, isScrollEnd = false) {
       const liveChatComments = this.$refs.liveChatComments
       if (event.wheelDelta >= 0 && this.stayAtBottom) {
         this.stayAtBottom = false
@@ -279,10 +314,8 @@ export default defineComponent({
         if (liveChatComments.scrollHeight > liveChatComments.clientHeight) {
           this.showScrollToBottom = true
         }
-      } else if (event.wheelDelta < 0 && !this.stayAtBottom) {
-        if ((liveChatComments.scrollHeight - liveChatComments.scrollTop) === liveChatComments.clientHeight) {
-          this.scrollToBottom()
-        }
+      } else if ((isScrollEnd || event.wheelDelta < 0) && !this.stayAtBottom && (liveChatComments.scrollHeight - liveChatComments.scrollTop) === liveChatComments.clientHeight) {
+        this.scrollToBottom()
       }
     },
 

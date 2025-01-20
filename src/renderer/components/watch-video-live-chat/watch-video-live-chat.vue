@@ -1,6 +1,7 @@
 <template>
   <ft-card
-    class="relative"
+    class="card relative"
+    :class="{ hasError }"
   >
     <ft-loader
       v-if="isLoading"
@@ -8,6 +9,7 @@
     <div
       v-else-if="hasError"
       class="messageContainer"
+      :class="{ hasError }"
     >
       <p
         class="message"
@@ -33,14 +35,22 @@
       <p
         class="message"
       >
-        {{ $t("Video['Live chat is enabled.  Chat messages will appear here once sent.']") }}
+        {{ $t("Video['Live chat is enabled. Chat messages will appear here once sent.']") }}
       </p>
     </div>
     <div
       v-else
       class="relative"
     >
-      <h4>{{ $t("Video.Live Chat") }}</h4>
+      <h4>
+        {{ $t("Video.Live Chat") }}
+        <span
+          v-if="!hideVideoViews && watchingCount !== null"
+          class="watchingCount"
+        >
+          {{ $tc('Global.Counts.Watching Count', watchingCount, { count: formattedWatchingCount }) }}
+        </span>
+      </h4>
       <div
         v-if="superChatComments.length > 0"
         class="superChatComments"
@@ -116,8 +126,9 @@
       <div
         ref="liveChatComments"
         class="liveChatComments"
-        :style="{ height: chatHeight }"
+        :style="{ blockSize: chatHeight }"
         @mousewheel="e => onScroll(e)"
+        @scrollend="e => onScroll(e, true)"
       >
         <div
           v-for="(comment, index) in comments"

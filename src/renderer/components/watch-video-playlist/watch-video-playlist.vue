@@ -6,28 +6,45 @@
     <div
       v-else
     >
-      <h3>
+      <h3
+        class="playlistTitle"
+        :title="playlistTitle"
+      >
         <router-link
-          class="playlistTitle"
-          :to="`/playlist/${playlistId}`"
+          class="playlistTitleLink"
+          :to="playlistPageLinkTo"
         >
           {{ playlistTitle }}
         </router-link>
       </h3>
-      <router-link
-        class="channelName"
-        :to="`/channel/${channelId}`"
+      <template
+        v-if="channelName !== ''"
       >
-        {{ channelName }}
-      </router-link>
+        <router-link
+          v-if="channelId"
+          class="channelName"
+          :to="`/channel/${channelId}`"
+        >
+          {{ channelName }} -
+        </router-link>
+        <span
+          v-else
+          class="channelName"
+        >
+          {{ channelName }} -
+        </span>
+      </template>
       <span
         class="playlistIndex"
       >
-        - {{ currentVideoIndex }} / {{ playlistVideoCount }}
+        <label for="playlistProgressBar">
+          {{ currentVideoIndexOneBased }} / {{ playlistVideoCount }}
+        </label>
         <progress
           v-if="!shuffleEnabled && !reversePlaylist"
+          id="playlistProgressBar"
           class="playlistProgressBar"
-          :value="currentVideoIndex"
+          :value="currentVideoIndexOneBased"
           :max="playlistVideoCount"
         />
       </span>
@@ -39,6 +56,7 @@
           :title="$t('Video.Loop Playlist')"
           role="button"
           tabindex="0"
+          :aria-pressed="loopEnabled"
           @click="toggleLoop"
           @keydown.enter.prevent="toggleLoop"
           @keydown.space.prevent="toggleLoop"
@@ -50,6 +68,7 @@
           :title="$t('Video.Shuffle Playlist')"
           role="button"
           tabindex="0"
+          :aria-pressed="shuffleEnabled"
           @click="toggleShuffle"
           @keydown.enter.prevent="toggleShuffle"
           @keydown.space.prevent="toggleShuffle"
@@ -61,6 +80,7 @@
           :title="$t('Video.Reverse Playlist')"
           role="button"
           tabindex="0"
+          :aria-pressed="reversePlaylist"
           @click="toggleReversePlaylist"
           @keydown.enter.prevent="toggleReversePlaylist"
           @keydown.space.prevent="toggleReversePlaylist"
@@ -88,38 +108,28 @@
       </p>
       <div
         v-if="!isLoading"
+        ref="playlistItems"
         class="playlistItems"
       >
-        <div
+        <ft-list-video-numbered
           v-for="(item, index) in playlistItems"
-          :key="index"
+          :key="item.playlistItemId || item.videoId"
+          :ref="currentVideoIndexZeroBased === index ? 'currentVideoItem' : null"
           class="playlistItem"
-        >
-          <div class="videoIndexContainer">
-            <font-awesome-icon
-              v-if="currentVideoIndex === (index + 1)"
-              class="videoIndexIcon"
-              :icon="['fas', 'play']"
-            />
-            <p
-              v-else
-              class="videoIndex"
-            >
-              {{ index + 1 }}
-            </p>
-          </div>
-          <ft-list-video-lazy
-            :data="item"
-            :playlist-id="playlistId"
-            :playlist-index="reversePlaylist ? playlistItems.length - index - 1 : index"
-            :playlist-reverse="reversePlaylist"
-            :playlist-shuffle="shuffleEnabled"
-            :playlist-loop="loopEnabled"
-            appearance="watchPlaylistItem"
-            force-list-type="list"
-            @pause-player="$emit('pause-player')"
-          />
-        </div>
+          :data="item"
+          :playlist-id="playlistId"
+          :playlist-type="playlistType"
+          :playlist-index="reversePlaylist ? playlistItems.length - index - 1 : index"
+          :playlist-item-id="item.playlistItemId"
+          :playlist-reverse="reversePlaylist"
+          :playlist-shuffle="shuffleEnabled"
+          :playlist-loop="loopEnabled"
+          :video-index="index"
+          :is-current-video="currentVideoIndexZeroBased === index"
+          appearance="watchPlaylistItem"
+          :initial-visible-state="index < (currentVideoIndexZeroBased + 4) && index > (currentVideoIndexZeroBased - 4)"
+          @pause-player="pausePlayer"
+        />
       </div>
     </div>
   </ft-card>

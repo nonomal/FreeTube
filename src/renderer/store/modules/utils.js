@@ -1,10 +1,12 @@
 import fs from 'fs/promises'
 import path from 'path'
 import i18n from '../../i18n/index'
+import { set as vueSet } from 'vue'
 
 import { IpcChannels } from '../../../constants'
 import { pathExists } from '../../helpers/filesystem'
 import {
+  CHANNEL_HANDLE_REGEX,
   createWebURL,
   getVideoParamsFromUrl,
   openExternalLink,
@@ -17,6 +19,7 @@ import {
 
 const state = {
   isSideNavOpen: false,
+  outlinesHidden: true,
   sessionSearchHistory: [],
   popularCache: null,
   trendingCache: {
@@ -26,8 +29,17 @@ const state = {
     movies: null
   },
   cachedPlaylist: null,
+  deArrowCache: {},
   showProgressBar: false,
+  showAddToPlaylistPrompt: false,
+  showCreatePlaylistPrompt: false,
+  isKeyboardShortcutPromptShown: false,
+  showSearchFilters: false,
+  searchFilterValueChanged: false,
   progressBarPercentage: 0,
+  toBeAddedToPlaylistVideoList: [],
+  newPlaylistDefaultProperties: {},
+  newPlaylistVideoObject: [],
   regionNames: [],
   regionValues: [],
   recentBlogPosts: [],
@@ -35,82 +47,155 @@ const state = {
     sortBy: 'relevance',
     time: '',
     type: 'all',
-    duration: ''
+    duration: '',
+    features: [],
   },
   externalPlayerNames: [],
-  externalPlayerNameTranslationKeys: [],
   externalPlayerValues: [],
-  externalPlayerCmdArguments: {}
+  externalPlayerCmdArguments: {},
+  lastPopularRefreshTimestamp: '',
+  lastTrendingRefreshTimestamp: '',
+  subscriptionFirstAutoFetchRunData: {
+    videos: false,
+    liveStreams: false,
+    shorts: false,
+    communityPosts: false,
+  },
+  appTitle: ''
 }
 
 const getters = {
-  getIsSideNavOpen () {
+  getIsSideNavOpen(state) {
     return state.isSideNavOpen
   },
 
-  getCurrentVolume () {
-    return state.currentVolume
+  getOutlinesHidden(state) {
+    return state.outlinesHidden
   },
 
-  getSessionSearchHistory () {
+  getSessionSearchHistory(state) {
     return state.sessionSearchHistory
   },
 
-  getPopularCache () {
+  getDeArrowCache: (state) => {
+    return state.deArrowCache
+  },
+
+  getPopularCache(state) {
     return state.popularCache
   },
 
-  getTrendingCache () {
+  getTrendingCache(state) {
     return state.trendingCache
   },
 
-  getCachedPlaylist() {
+  getCachedPlaylist(state) {
     return state.cachedPlaylist
   },
 
-  getSearchSettings () {
+  getSearchSettings(state) {
     return state.searchSettings
   },
 
-  getShowProgressBar () {
+  getSearchFilterValueChanged(state) {
+    return state.searchFilterValueChanged
+  },
+
+  getIsKeyboardShortcutPromptShown(state) {
+    return state.isKeyboardShortcutPromptShown
+  },
+
+  getShowAddToPlaylistPrompt(state) {
+    return state.showAddToPlaylistPrompt
+  },
+
+  getShowCreatePlaylistPrompt(state) {
+    return state.showCreatePlaylistPrompt
+  },
+
+  getShowSearchFilters(state) {
+    return state.showSearchFilters
+  },
+
+  getToBeAddedToPlaylistVideoList(state) {
+    return state.toBeAddedToPlaylistVideoList
+  },
+
+  getNewPlaylistDefaultProperties(state) {
+    return state.newPlaylistDefaultProperties
+  },
+
+  getNewPlaylistVideoObject(state) {
+    return state.newPlaylistVideoObject
+  },
+
+  getShowProgressBar(state) {
     return state.showProgressBar
   },
 
-  getProgressBarPercentage () {
+  getProgressBarPercentage(state) {
     return state.progressBarPercentage
   },
 
-  getRegionNames () {
+  getRegionNames(state) {
     return state.regionNames
   },
 
-  getRegionValues () {
+  getRegionValues(state) {
     return state.regionValues
   },
 
-  getRecentBlogPosts () {
+  getRecentBlogPosts(state) {
     return state.recentBlogPosts
   },
 
-  getExternalPlayerNames () {
+  getExternalPlayerNames(state) {
     return state.externalPlayerNames
   },
 
-  getExternalPlayerNameTranslationKeys () {
-    return state.externalPlayerNameTranslationKeys
-  },
-
-  getExternalPlayerValues () {
+  getExternalPlayerValues(state) {
     return state.externalPlayerValues
   },
 
-  getExternalPlayerCmdArguments () {
+  getExternalPlayerCmdArguments (state) {
     return state.externalPlayerCmdArguments
+  },
+
+  getLastTrendingRefreshTimestamp(state) {
+    return state.lastTrendingRefreshTimestamp
+  },
+
+  getLastPopularRefreshTimestamp(state) {
+    return state.lastPopularRefreshTimestamp
+  },
+
+  getSubscriptionForVideosFirstAutoFetchRun(state) {
+    return state.subscriptionFirstAutoFetchRunData.videos === true
+  },
+  getSubscriptionForLiveStreamsFirstAutoFetchRun (state) {
+    return state.subscriptionFirstAutoFetchRunData.liveStreams === true
+  },
+  getSubscriptionForShortsFirstAutoFetchRun (state) {
+    return state.subscriptionFirstAutoFetchRunData.shorts === true
+  },
+  getSubscriptionForCommunityPostsFirstAutoFetchRun (state) {
+    return state.subscriptionFirstAutoFetchRunData.communityPosts === true
+  },
+  getAppTitle (state) {
+    return state.appTitle
   }
 }
 
 const actions = {
-  async downloadMedia({ rootState }, { url, title, extension, fallingBackPath }) {
+  showOutlines({ commit }) {
+    commit('setOutlinesHidden', false)
+  },
+
+  hideOutlines({ commit }) {
+    commit('setOutlinesHidden', true)
+  },
+
+  async downloadMedia({ rootState }, { url, title, extension }) {
     if (!process.env.IS_ELECTRON) {
       openExternalLink(url)
       return
@@ -118,9 +203,10 @@ const actions = {
 
     const fileName = `${replaceFilenameForbiddenChars(title)}.${extension}`
     const errorMessage = i18n.t('Downloading failed', { videoTitle: title })
+    const askFolderPath = rootState.settings.downloadAskPath
     let folderPath = rootState.settings.downloadFolderPath
 
-    if (folderPath === '') {
+    if (askFolderPath) {
       const options = {
         defaultPath: fileName,
         filters: [
@@ -195,64 +281,134 @@ const actions = {
   },
 
   parseScreenshotCustomFileName: function({ rootState }, payload) {
-    return new Promise((resolve, reject) => {
-      const { pattern = rootState.settings.screenshotFilenamePattern, date, playerTime, videoId } = payload
-      const keywords = [
-        ['%Y', date.getFullYear()], // year 4 digits
-        ['%M', (date.getMonth() + 1).toString().padStart(2, '0')], // month 2 digits
-        ['%D', date.getDate().toString().padStart(2, '0')], // day 2 digits
-        ['%H', date.getHours().toString().padStart(2, '0')], // hour 2 digits
-        ['%N', date.getMinutes().toString().padStart(2, '0')], // minute 2 digits
-        ['%S', date.getSeconds().toString().padStart(2, '0')], // second 2 digits
-        ['%T', date.getMilliseconds().toString().padStart(3, '0')], // millisecond 3 digits
-        ['%s', parseInt(playerTime)], // video position second n digits
-        ['%t', (playerTime % 1).toString().slice(2, 5) || '000'], // video position millisecond 3 digits
-        ['%i', videoId] // video id
+    const { pattern = rootState.settings.screenshotFilenamePattern, date, playerTime, videoId } = payload
+    const keywords = [
+      ['%Y', date.getFullYear()], // year 4 digits
+      ['%M', (date.getMonth() + 1).toString().padStart(2, '0')], // month 2 digits
+      ['%D', date.getDate().toString().padStart(2, '0')], // day 2 digits
+      ['%H', date.getHours().toString().padStart(2, '0')], // hour 2 digits
+      ['%N', date.getMinutes().toString().padStart(2, '0')], // minute 2 digits
+      ['%S', date.getSeconds().toString().padStart(2, '0')], // second 2 digits
+      ['%T', date.getMilliseconds().toString().padStart(3, '0')], // millisecond 3 digits
+      ['%s', parseInt(playerTime)], // video position second n digits
+      ['%t', (playerTime % 1).toString().slice(2, 5) || '000'], // video position millisecond 3 digits
+      ['%i', videoId] // video id
+    ]
+
+    let parsedString = pattern
+    for (const [key, value] of keywords) {
+      parsedString = parsedString.replaceAll(key, value)
+    }
+
+    if (parsedString !== replaceFilenameForbiddenChars(parsedString)) {
+      throw new Error(i18n.t('Settings.Player Settings.Screenshot.Error.Forbidden Characters'))
+    }
+
+    if (!parsedString) {
+      throw new Error(i18n.t('Settings.Player Settings.Screenshot.Error.Empty File Name'))
+    }
+
+    return parsedString
+  },
+
+  showAddToPlaylistPromptForManyVideos ({ commit }, { videos: videoObjectArray, newPlaylistDefaultProperties }) {
+    let videoDataValid = true
+    if (!Array.isArray(videoObjectArray)) {
+      videoDataValid = false
+    }
+    let missingKeys = []
+
+    if (videoDataValid) {
+      const requiredVideoKeys = [
+        'videoId',
+        'title',
+        'author',
+        'authorId',
+        'lengthSeconds',
+
+        // `timeAdded` should be generated when videos are added
+        // Not when a prompt is displayed
+        // 'timeAdded',
+
+        // `playlistItemId` should be generated anyway
+        // 'playlistItemId',
+
+        // `type` should be added in action anyway
+        // 'type',
       ]
+      // Using `every` to loop and `return false` to break
+      videoObjectArray.every((video) => {
+        const videoPropertyKeys = Object.keys(video)
+        const missingKeysHere = requiredVideoKeys.filter(x => !videoPropertyKeys.includes(x))
+        if (missingKeysHere.length > 0) {
+          videoDataValid = false
+          missingKeys = missingKeysHere
+          return false
+        }
+        // Return true to continue loop
+        return true
+      })
+    }
 
-      let parsedString = pattern
-      for (const [key, value] of keywords) {
-        parsedString = parsedString.replaceAll(key, value)
-      }
+    if (!videoDataValid) {
+      // Print error and abort
+      const errorMsgText = 'Incorrect videos data passed when opening playlist prompt'
+      console.error(errorMsgText)
+      console.error({
+        videoObjectArray,
+        missingKeys,
+      })
+      throw new Error(errorMsgText)
+    }
 
-      if (parsedString !== replaceFilenameForbiddenChars(parsedString)) {
-        reject(new Error('Forbidden Characters')) // use message as translation key
-      }
+    commit('setShowAddToPlaylistPrompt', true)
+    commit('setToBeAddedToPlaylistVideoList', videoObjectArray)
+    if (newPlaylistDefaultProperties != null) {
+      commit('setNewPlaylistDefaultProperties', newPlaylistDefaultProperties)
+    }
+  },
 
-      let filename
-      if (parsedString.indexOf(path.sep) !== -1) {
-        const lastIndex = parsedString.lastIndexOf(path.sep)
-        filename = parsedString.substring(lastIndex + 1)
-      } else {
-        filename = parsedString
-      }
+  hideAddToPlaylistPrompt ({ commit }) {
+    commit('setShowAddToPlaylistPrompt', false)
+    // The default value properties are only valid until prompt is closed
+    commit('resetNewPlaylistDefaultProperties')
+  },
 
-      if (!filename) {
-        reject(new Error('Empty File Name'))
-      }
+  showCreatePlaylistPrompt ({ commit }, data) {
+    commit('setShowCreatePlaylistPrompt', true)
+    commit('setNewPlaylistVideoObject', data)
+  },
 
-      resolve(parsedString)
-    })
+  hideCreatePlaylistPrompt ({ commit }) {
+    commit('setShowCreatePlaylistPrompt', false)
+  },
+
+  showKeyboardShortcutPrompt ({ commit }) {
+    commit('setIsKeyboardShortcutPromptShown', true)
+  },
+
+  hideKeyboardShortcutPrompt ({ commit }) {
+    commit('setIsKeyboardShortcutPromptShown', false)
+  },
+
+  showSearchFilters ({ commit }) {
+    commit('setShowSearchFilters', true)
+  },
+
+  hideSearchFilters ({ commit }) {
+    commit('setShowSearchFilters', false)
   },
 
   updateShowProgressBar ({ commit }, value) {
     commit('setShowProgressBar', value)
   },
 
-  async getRegionData ({ commit }, { locale }) {
-    let localePathExists
-    // Exclude __dirname from path if not in electron
-    const fileLocation = `${process.env.IS_ELECTRON ? process.env.NODE_ENV === 'development' ? '.' : __dirname : ''}/static/geolocations/`
-    if (process.env.IS_ELECTRON) {
-      localePathExists = await pathExists(`${fileLocation}${locale}`)
-    } else {
-      localePathExists = process.env.GEOLOCATION_NAMES.includes(locale)
-    }
-    const pathName = `${fileLocation}${localePathExists ? locale : 'en-US'}/countries.json`
-    const fileData = process.env.IS_ELECTRON ? JSON.parse(await fs.readFile(pathName)) : await (await fetch(createWebURL(pathName))).json()
+  async getRegionData ({ commit }, locale) {
+    const localePathExists = process.env.GEOLOCATION_NAMES.includes(locale)
 
-    const countries = fileData.map((entry) => { return { id: entry.id, name: entry.name, code: entry.alpha2 } })
-    countries.sort((a, b) => { return a.id - b.id })
+    const url = createWebURL(`/static/geolocations/${localePathExists ? locale : 'en-US'}.json`)
+
+    const countries = await (await fetch(url)).json()
 
     const regionNames = countries.map((entry) => { return entry.name })
     const regionValues = countries.map((entry) => { return entry.code })
@@ -261,7 +417,7 @@ const actions = {
     commit('setRegionValues', regionValues)
   },
 
-  getYoutubeUrlInfo ({ state }, urlStr) {
+  async getYoutubeUrlInfo({ rootState, state }, urlStr) {
     // Returns
     // - urlType [String] `video`, `playlist`
     //
@@ -288,6 +444,11 @@ const actions = {
     //
     // If `urlType` is "invalid_url"
     // Nothing else
+
+    if (CHANNEL_HANDLE_REGEX.test(urlStr)) {
+      urlStr = `https://www.youtube.com/${urlStr}`
+    }
+
     const { videoId, timestamp, playlistId } = getVideoParamsFromUrl(urlStr)
     if (videoId) {
       return {
@@ -309,13 +470,17 @@ const actions = {
     let urlType = 'unknown'
 
     const channelPattern =
-      /^\/(?:(?<type>channel|user|c)\/)?(?<channelId>[^/]+)(?:\/(join|featured|videos|playlists|about|community|channels))?\/?$/
+      /^\/(?:(?:channel|user|c)\/)?(?<channelId>[^/]+)(?:\/(?<tab>join|featured|videos|shorts|live|streams|podcasts|releases|playlists|about|community|channels))?\/?$/
 
+    const hashtagPattern = /^\/hashtag\/(?<tag>[^#&/?]+)$/
+
+    const postPattern = /^\/post\/(?<postId>.+)/
     const typePatterns = new Map([
       ['playlist', /^(\/playlist\/?|\/embed(\/?videoseries)?)$/],
-      ['search', /^\/results\/?$/],
-      ['hashtag', /^\/hashtag\/([^#&/?]+)$/],
-      ['channel', channelPattern]
+      ['search', /^\/results|search\/?$/],
+      ['hashtag', hashtagPattern],
+      ['channel', channelPattern],
+      ['post', postPattern]
     ])
 
     for (const [type, pattern] of typePatterns) {
@@ -348,19 +513,28 @@ const actions = {
       }
 
       case 'search': {
-        if (!url.searchParams.has('search_query')) {
+        let searchQuery = null
+        if (url.searchParams.has('search_query')) {
+          // https://www.youtube.com/results?search_query={QUERY}
+          searchQuery = url.searchParams.get('search_query')
+          url.searchParams.delete('search_query')
+        }
+        if (url.searchParams.has('q')) {
+          // https://redirect.invidious.io/search?q={QUERY}
+          searchQuery = url.searchParams.get('q')
+          url.searchParams.delete('q')
+        }
+        if (searchQuery == null) {
           throw new Error('Search: "search_query" field not found')
         }
-
-        const searchQuery = url.searchParams.get('search_query')
-        url.searchParams.delete('search_query')
 
         const searchSettings = state.searchSettings
         const query = {
           sortBy: searchSettings.sortBy,
           time: searchSettings.time,
           type: searchSettings.type,
-          duration: searchSettings.duration
+          duration: searchSettings.duration,
+          features: searchSettings.features
         }
 
         for (const [param, value] of url.searchParams) {
@@ -375,8 +549,23 @@ const actions = {
       }
 
       case 'hashtag': {
+        const match = url.pathname.match(hashtagPattern)
+        const hashtag = match.groups.tag
+
         return {
-          urlType: 'hashtag'
+          urlType: 'hashtag',
+          hashtag
+        }
+      }
+
+      case 'post': {
+        const match = url.pathname.match(postPattern)
+        const postId = match.groups.postId
+        const query = { authorId: url.searchParams.get('ucid') }
+        return {
+          urlType: 'post',
+          postId,
+          query
         }
       }
       /*
@@ -409,30 +598,59 @@ const actions = {
       case 'channel': {
         const match = url.pathname.match(channelPattern)
         const channelId = match.groups.channelId
-        const idType = ['channel', 'user', 'c'].indexOf(match.groups.type) + 1
         if (!channelId) {
           throw new Error('Channel: could not extract id')
         }
 
         let subPath = null
-        switch (url.pathname.split('/').filter(i => i)[2]) {
+        switch (match.groups.tab) {
+          case 'shorts':
+            subPath = 'shorts'
+            break
+          case 'live':
+          case 'streams':
+            subPath = 'live'
+            break
           case 'playlists':
             subPath = 'playlists'
+            break
+          case 'podcasts':
+            subPath = 'podcasts'
+            break
+          case 'releases':
+            subPath = 'releases'
             break
           case 'channels':
           case 'about':
             subPath = 'about'
             break
           case 'community':
-          default:
+            if (url.searchParams.has('lb')) {
+              // if it has the lb search parameter then it is linking a specific community post
+              const postId = url.searchParams.get('lb')
+              const query = { authorId: channelId }
+              return {
+                urlType: 'post',
+                postId,
+                query
+              }
+            }
+            subPath = 'community'
+            break
+          case 'videos':
             subPath = 'videos'
+            break
+          default:
+            subPath = rootState.settings.backendPreference === 'local' && !rootState.settings.hideChannelHome ? 'home' : 'videos'
             break
         }
         return {
           urlType: 'channel',
           channelId,
-          idType,
-          subPath
+          subPath,
+          // The original URL could be from Invidious.
+          // We need to make sure it starts with youtube.com, so that YouTube's resolve endpoint can recognise it
+          url: `https://www.youtube.com${url.pathname}`
         }
       }
 
@@ -449,24 +667,15 @@ const actions = {
     commit('setSessionSearchHistory', [])
   },
 
-  async getExternalPlayerCmdArgumentsData ({ commit }, payload) {
-    const fileName = 'external-player-map.json'
-    let fileData
-    /* eslint-disable-next-line n/no-path-concat */
-    const fileLocation = process.env.NODE_ENV === 'development' ? './static/' : `${__dirname}/static/`
-
-    if (await pathExists(`${fileLocation}${fileName}`)) {
-      fileData = await fs.readFile(`${fileLocation}${fileName}`)
-    } else {
-      fileData = '[{"name":"None","value":"","cmdArguments":null}]'
-    }
-
-    const externalPlayerMap = JSON.parse(fileData).map((entry) => {
-      return { name: entry.name, nameTranslationKey: entry.nameTranslationKey, value: entry.value, cmdArguments: entry.cmdArguments }
-    })
+  async getExternalPlayerCmdArgumentsData ({ commit }) {
+    const url = createWebURL('/static/external-player-map.json')
+    const externalPlayerMap = await (await fetch(url)).json()
+    // Sort external players alphabetically & case-insensitive, keep default entry at the top
+    const playerNone = externalPlayerMap.shift()
+    externalPlayerMap.sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }))
+    externalPlayerMap.unshift(playerNone)
 
     const externalPlayerNames = externalPlayerMap.map((entry) => { return entry.name })
-    const externalPlayerNameTranslationKeys = externalPlayerMap.map((entry) => { return entry.nameTranslationKey })
     const externalPlayerValues = externalPlayerMap.map((entry) => { return entry.value })
     const externalPlayerCmdArguments = externalPlayerMap.reduce((result, item) => {
       result[item.value] = item.cmdArguments
@@ -474,7 +683,6 @@ const actions = {
     }, {})
 
     commit('setExternalPlayerNames', externalPlayerNames)
-    commit('setExternalPlayerNameTranslationKeys', externalPlayerNameTranslationKeys)
     commit('setExternalPlayerValues', externalPlayerValues)
     commit('setExternalPlayerCmdArguments', externalPlayerCmdArguments)
   },
@@ -487,99 +695,122 @@ const actions = {
       ? rootState.settings.externalPlayerExecutable
       : cmdArgs.defaultExecutable
     const ignoreWarnings = rootState.settings.externalPlayerIgnoreWarnings
+    const ignoreDefaultArgs = rootState.settings.externalPlayerIgnoreDefaultArgs
     const customArgs = rootState.settings.externalPlayerCustomArgs
 
-    // Append custom user-defined arguments,
-    // or use the default ones specified for the external player.
-    if (typeof customArgs === 'string' && customArgs !== '') {
-      const custom = customArgs.split(';')
-      args.push(...custom)
-    } else if (typeof cmdArgs.defaultCustomArguments === 'string' && cmdArgs.defaultCustomArguments !== '') {
-      const defaultCustomArguments = cmdArgs.defaultCustomArguments.split(';')
-      args.push(...defaultCustomArguments)
-    }
-
-    if (payload.watchProgress > 0 && payload.watchProgress < payload.videoLength - 10) {
-      if (typeof cmdArgs.startOffset === 'string') {
-        args.push(`${cmdArgs.startOffset}${payload.watchProgress}`)
-      } else if (!ignoreWarnings) {
-        showExternalPlayerUnsupportedActionToast(externalPlayer, 'starting video at offset')
+    if (ignoreDefaultArgs) {
+      if (typeof customArgs === 'string' && customArgs !== '[]') {
+        const custom = JSON.parse(customArgs)
+        args.push(...custom)
       }
-    }
-
-    if (payload.playbackRate !== null) {
-      if (typeof cmdArgs.playbackRate === 'string') {
-        args.push(`${cmdArgs.playbackRate}${payload.playbackRate}`)
-      } else if (!ignoreWarnings) {
-        showExternalPlayerUnsupportedActionToast(externalPlayer, 'setting a playback rate')
-      }
-    }
-
-    // Check whether the video is in a playlist
-    if (typeof cmdArgs.playlistUrl === 'string' && payload.playlistId !== null && payload.playlistId !== '') {
-      if (payload.playlistIndex !== null) {
-        if (typeof cmdArgs.playlistIndex === 'string') {
-          args.push(`${cmdArgs.playlistIndex}${payload.playlistIndex}`)
-        } else if (!ignoreWarnings) {
-          showExternalPlayerUnsupportedActionToast(externalPlayer, 'opening specific video in a playlist (falling back to opening the video)')
-        }
-      }
-
-      if (payload.playlistReverse) {
-        if (typeof cmdArgs.playlistReverse === 'string') {
-          args.push(cmdArgs.playlistReverse)
-        } else if (!ignoreWarnings) {
-          showExternalPlayerUnsupportedActionToast(externalPlayer, 'reversing playlists')
-        }
-      }
-
-      if (payload.playlistShuffle) {
-        if (typeof cmdArgs.playlistShuffle === 'string') {
-          args.push(cmdArgs.playlistShuffle)
-        } else if (!ignoreWarnings) {
-          showExternalPlayerUnsupportedActionToast(externalPlayer, 'shuffling playlists')
-        }
-      }
-
-      if (payload.playlistLoop) {
-        if (typeof cmdArgs.playlistLoop === 'string') {
-          args.push(cmdArgs.playlistLoop)
-        } else if (!ignoreWarnings) {
-          showExternalPlayerUnsupportedActionToast(externalPlayer, 'looping playlists')
-        }
-      }
-      if (cmdArgs.supportsYtdlProtocol) {
-        args.push(`${cmdArgs.playlistUrl}ytdl://${payload.playlistId}`)
-      } else {
-        args.push(`${cmdArgs.playlistUrl}https://youtube.com/playlist?list=${payload.playlistId}`)
-      }
+      if (payload.videoId != null) args.push(`${cmdArgs.videoUrl}https://www.youtube.com/watch?v=${payload.videoId}`)
     } else {
-      if (payload.playlistId !== null && payload.playlistId !== '' && !ignoreWarnings) {
-        showExternalPlayerUnsupportedActionToast(externalPlayer, 'opening playlists')
+      // Append custom user-defined arguments,
+      // or use the default ones specified for the external player.
+      if (typeof customArgs === 'string' && customArgs !== '[]') {
+        const custom = JSON.parse(customArgs)
+        args.push(...custom)
+      } else if (Array.isArray(cmdArgs.defaultCustomArguments)) {
+        args.push(...cmdArgs.defaultCustomArguments)
       }
-      if (payload.videoId !== null) {
-        if (cmdArgs.supportsYtdlProtocol) {
-          args.push(`${cmdArgs.videoUrl}ytdl://${payload.videoId}`)
+
+      if (payload.watchProgress > 0 && payload.watchProgress < payload.videoLength - 10) {
+        if (typeof cmdArgs.startOffset === 'string') {
+          if (cmdArgs.defaultExecutable.startsWith('mpc')) {
+            // For mpc-hc and mpc-be, which require startOffset to be in milliseconds
+            args.push(cmdArgs.startOffset, (Math.trunc(payload.watchProgress) * 1000))
+          } else if (cmdArgs.startOffset.endsWith('=')) {
+            // For players using `=` in arguments
+            // e.g. vlc --start-time=xxxxx
+            args.push(`${cmdArgs.startOffset}${payload.watchProgress}`)
+          } else {
+            // For players using space in arguments
+            // e.g. smplayer -start xxxxx
+            args.push(cmdArgs.startOffset, Math.trunc(payload.watchProgress))
+          }
+        } else if (!ignoreWarnings) {
+          showExternalPlayerUnsupportedActionToast(externalPlayer, i18n.t('Video.External Player.Unsupported Actions.starting video at offset'))
+        }
+      }
+
+      if (payload.playbackRate != null) {
+        if (typeof cmdArgs.playbackRate === 'string') {
+          args.push(`${cmdArgs.playbackRate}${payload.playbackRate}`)
+        } else if (!ignoreWarnings) {
+          showExternalPlayerUnsupportedActionToast(externalPlayer, i18n.t('Video.External Player.Unsupported Actions.setting a playback rate'))
+        }
+      }
+
+      // Check whether the video is in a playlist
+      if (typeof cmdArgs.playlistUrl === 'string' && payload.playlistId != null && payload.playlistId !== '') {
+        if (payload.playlistIndex != null) {
+          if (typeof cmdArgs.playlistIndex === 'string') {
+            args.push(`${cmdArgs.playlistIndex}${payload.playlistIndex}`)
+          } else if (!ignoreWarnings) {
+            showExternalPlayerUnsupportedActionToast(externalPlayer, i18n.t('Video.External Player.Unsupported Actions.opening specific video in a playlist (falling back to opening the video)'))
+          }
+        }
+
+        if (payload.playlistReverse) {
+          if (typeof cmdArgs.playlistReverse === 'string') {
+            args.push(cmdArgs.playlistReverse)
+          } else if (!ignoreWarnings) {
+            showExternalPlayerUnsupportedActionToast(externalPlayer, i18n.t('Video.External Player.Unsupported Actions.reversing playlists'))
+          }
+        }
+
+        if (payload.playlistShuffle) {
+          if (typeof cmdArgs.playlistShuffle === 'string') {
+            args.push(cmdArgs.playlistShuffle)
+          } else if (!ignoreWarnings) {
+            showExternalPlayerUnsupportedActionToast(externalPlayer, i18n.t('Video.External Player.Unsupported Actions.shuffling playlists'))
+          }
+        }
+
+        if (payload.playlistLoop) {
+          if (typeof cmdArgs.playlistLoop === 'string') {
+            args.push(cmdArgs.playlistLoop)
+          } else if (!ignoreWarnings) {
+            showExternalPlayerUnsupportedActionToast(externalPlayer, i18n.t('Video.External Player.Unsupported Actions.looping playlists'))
+          }
+        }
+
+        // If the player supports opening playlists but not indexes, send only the video URL if an index is specified
+        if (cmdArgs.playlistIndex == null && payload.playlistIndex != null && payload.playlistIndex !== '') {
+          args.push(`${cmdArgs.videoUrl}https://youtube.com/watch?v=${payload.videoId}`)
         } else {
+          args.push(`${cmdArgs.playlistUrl}https://youtube.com/playlist?list=${payload.playlistId}`)
+        }
+      } else {
+        if (payload.playlistId != null && payload.playlistId !== '' && !ignoreWarnings) {
+          showExternalPlayerUnsupportedActionToast(externalPlayer, i18n.t('Video.External Player.Unsupported Actions.opening playlists'))
+        }
+        if (payload.videoId != null) {
           args.push(`${cmdArgs.videoUrl}https://www.youtube.com/watch?v=${payload.videoId}`)
         }
       }
     }
 
-    const videoOrPlaylist = payload.playlistId === null || payload.playlistId === ''
-      ? i18n.t('Video.External Player.video')
-      : i18n.t('Video.External Player.playlist')
+    const videoOrPlaylist = payload.playlistId != null && payload.playlistId !== ''
+      ? i18n.t('Video.External Player.playlist')
+      : i18n.t('Video.External Player.video')
 
     showToast(i18n.t('Video.External Player.OpeningTemplate', { videoOrPlaylist, externalPlayer }))
 
-    const { ipcRenderer } = require('electron')
-    ipcRenderer.send(IpcChannels.OPEN_IN_EXTERNAL_PLAYER, { executable, args })
-  }
+    if (process.env.IS_ELECTRON) {
+      const { ipcRenderer } = require('electron')
+      ipcRenderer.send(IpcChannels.OPEN_IN_EXTERNAL_PLAYER, { executable, args })
+    }
+  },
 }
 
 const mutations = {
   toggleSideNav (state) {
     state.isSideNavOpen = !state.isSideNavOpen
+  },
+
+  setOutlinesHidden(state, value) {
+    state.outlinesHidden = value
   },
 
   setShowProgressBar (state, value) {
@@ -594,6 +825,28 @@ const mutations = {
     state.sessionSearchHistory = history
   },
 
+  setDeArrowCache (state, cache) {
+    state.deArrowCache = cache
+  },
+
+  addVideoToDeArrowCache (state, payload) {
+    const sameVideo = state.deArrowCache[payload.videoId]
+
+    if (!sameVideo) {
+      // setting properties directly doesn't trigger watchers in Vue 2,
+      // so we need to use Vue's set function
+      vueSet(state.deArrowCache, payload.videoId, payload)
+    }
+  },
+
+  addThumbnailToDeArrowCache (state, payload) {
+    vueSet(state.deArrowCache, payload.videoId, payload)
+  },
+
+  removeFromSessionSearchHistory (state, query) {
+    state.sessionSearchHistory = state.sessionSearchHistory.filter((search) => search.query !== query)
+  },
+
   addToSessionSearchHistory (state, payload) {
     const sameSearch = state.sessionSearchHistory.findIndex((search) => {
       return search.query === payload.query && searchFiltersMatch(payload.searchSettings, search.searchSettings)
@@ -601,10 +854,47 @@ const mutations = {
 
     if (sameSearch !== -1) {
       state.sessionSearchHistory[sameSearch].data = payload.data
-      state.sessionSearchHistory[sameSearch].nextPageRef = payload.nextPageRef
+      if (payload.nextPageRef) {
+        // Local API
+        state.sessionSearchHistory[sameSearch].nextPageRef = payload.nextPageRef
+      } else if (payload.searchPage) {
+        // Invidious API
+        state.sessionSearchHistory[sameSearch].searchPage = payload.searchPage
+      }
     } else {
       state.sessionSearchHistory.push(payload)
     }
+  },
+
+  setShowAddToPlaylistPrompt (state, payload) {
+    state.showAddToPlaylistPrompt = payload
+  },
+
+  setShowCreatePlaylistPrompt (state, payload) {
+    state.showCreatePlaylistPrompt = payload
+  },
+
+  setIsKeyboardShortcutPromptShown (state, payload) {
+    state.isKeyboardShortcutPromptShown = payload
+  },
+
+  setShowSearchFilters (state, payload) {
+    state.showSearchFilters = payload
+  },
+
+  setToBeAddedToPlaylistVideoList (state, payload) {
+    state.toBeAddedToPlaylistVideoList = payload
+  },
+
+  setNewPlaylistDefaultProperties (state, payload) {
+    state.newPlaylistDefaultProperties = payload
+  },
+  resetNewPlaylistDefaultProperties (state) {
+    state.newPlaylistDefaultProperties = {}
+  },
+
+  setNewPlaylistVideoObject (state, payload) {
+    state.newPlaylistVideoObject = payload
   },
 
   setPopularCache (state, value) {
@@ -615,8 +905,29 @@ const mutations = {
     state.trendingCache[page] = value
   },
 
+  setLastTrendingRefreshTimestamp (state, timestamp) {
+    state.lastTrendingRefreshTimestamp = timestamp
+  },
+
+  setLastPopularRefreshTimestamp (state, timestamp) {
+    state.lastPopularRefreshTimestamp = timestamp
+  },
+
+  clearTrendingCache(state) {
+    state.trendingCache = {
+      default: null,
+      music: null,
+      gaming: null,
+      movies: null
+    }
+  },
+
   setCachedPlaylist(state, value) {
     state.cachedPlaylist = value
+  },
+
+  setSearchFilterValueChanged (state, value) {
+    state.searchFilterValueChanged = value
   },
 
   setSearchSortBy (state, value) {
@@ -635,6 +946,10 @@ const mutations = {
     state.searchSettings.duration = value
   },
 
+  setSearchFeatures (state, value) {
+    state.searchSettings.features = value
+  },
+
   setRegionNames (state, value) {
     state.regionNames = value
   },
@@ -651,16 +966,30 @@ const mutations = {
     state.externalPlayerNames = value
   },
 
-  setExternalPlayerNameTranslationKeys (state, value) {
-    state.externalPlayerNameTranslationKeys = value
-  },
-
   setExternalPlayerValues (state, value) {
     state.externalPlayerValues = value
   },
 
   setExternalPlayerCmdArguments (state, value) {
     state.externalPlayerCmdArguments = value
+  },
+
+  // Use this to set the app title / document.title
+  setAppTitle (state, value) {
+    state.appTitle = value
+  },
+
+  setSubscriptionForVideosFirstAutoFetchRun (state) {
+    state.subscriptionFirstAutoFetchRunData.videos = true
+  },
+  setSubscriptionForLiveStreamsFirstAutoFetchRun (state) {
+    state.subscriptionFirstAutoFetchRunData.liveStreams = true
+  },
+  setSubscriptionForShortsFirstAutoFetchRun (state) {
+    state.subscriptionFirstAutoFetchRunData.shorts = true
+  },
+  setSubscriptionForCommunityPostsFirstAutoFetchRun (state) {
+    state.subscriptionFirstAutoFetchRunData.communityPosts = true
   }
 }
 

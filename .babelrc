@@ -4,13 +4,13 @@
       "@babel/env",
       {
         "targets": {
-          "chrome": "106",
-          "node": "16.16.0"
+          "chrome": "130",
+          "node": "20.9.0"
         }
       }
     ]
   ],
   "plugins": [
-    "@babel/proposal-class-properties"
+    "@babel/plugin-transform-class-properties"
   ]
 }

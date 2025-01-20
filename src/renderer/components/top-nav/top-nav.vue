@@ -2,6 +2,7 @@
   <div
     class="topNav"
     :class="{ topNavBarColor: barColor }"
+    role="navigation"
   >
     <div class="side">
       <font-awesome-icon
@@ -12,22 +13,32 @@
         @click="toggleSideNav"
         @keydown.enter.prevent="toggleSideNav"
       />
-      <font-awesome-icon
-        ref="historyArrowBack"
-        class="navBackIcon navIcon fa-arrow-left"
+      <ft-icon-button
+        class="navIconButton"
+        :disabled="isArrowBackwardDisabled"
+        :class="{ arrowDisabled: isArrowBackwardDisabled }"
         :icon="['fas', 'arrow-left']"
-        role="button"
-        tabindex="0"
+        :theme="null"
+        :size="20"
+        :use-shadow="false"
+        dropdown-position-x="right"
+        :dropdown-options="navigationHistoryDropdownOptions"
+        :open-on-right-or-long-click="true"
         :title="backwardText"
         @click="historyBack"
         @keydown.enter.prevent="historyBack"
       />
-      <font-awesome-icon
-        ref="historyArrowForward"
-        class="navForwardIcon navIcon fa-arrow-right"
+      <ft-icon-button
+        class="navIconButton"
+        :disabled="isArrowForwardDisabled"
+        :class="{ arrowDisabled: isArrowForwardDisabled }"
         :icon="['fas', 'arrow-right']"
-        role="button"
-        tabindex="0"
+        :theme="null"
+        :size="20"
+        :use-shadow="false"
+        dropdown-position-x="right"
+        :dropdown-options="navigationHistoryDropdownOptions"
+        :open-on-right-or-long-click="true"
         :title="forwardText"
         @click="historyForward"
         @keydown.enter.prevent="historyForward"
@@ -53,12 +64,13 @@
       <div
         v-if="!hideHeaderLogo"
         class="logo"
+        dir="ltr"
         role="link"
         tabindex="0"
-        :title="$t('Subscriptions.Subscriptions')"
-        @click="navigate('subscriptions')"
-        @keydown.space.prevent="navigate('subscriptions')"
-        @keydown.enter.prevent="navigate('subscriptions')"
+        :title="headerLogoTitle"
+        @click="navigate(landingPage)"
+        @keydown.space.prevent="navigate(landingPage)"
+        @keydown.enter.prevent="navigate(landingPage)"
       >
         <div
           class="logoIcon"
@@ -80,28 +92,26 @@
           :placeholder="$t('Search / Go to URL')"
           class="searchInput"
           :is-search="true"
-          :data-list="searchSuggestionsDataList"
-          :spellcheck="false"
+          :data-list="activeDataList"
+          :data-list-properties="activeDataListProperties"
           :show-clear-text-button="true"
+          :show-data-when-empty="true"
           @input="getSearchSuggestionsDebounce"
           @click="goToSearch"
+          @clear="() => lastSuggestionQuery = ''"
+          @remove="removeSearchHistoryEntryInDbAndCache"
         />
         <font-awesome-icon
           class="navFilterIcon navIcon"
           :class="{ filterChanged: searchFilterValueChanged }"
           :icon="['fas', 'filter']"
+          :title="$t('Search Filters.Search Filters')"
           role="button"
           tabindex="0"
-          @click="showFilters = !showFilters"
-          @keydown.enter.prevent="showFilters = !showFilters"
+          @click="showSearchFilters"
+          @keydown.enter.prevent="showSearchFilters"
         />
       </div>
-      <ft-search-filters
-        v-if="!hideSearchBar"
-        v-show="showFilters"
-        class="searchFilters"
-        @filterValueUpdated="handleSearchFilterValueChanged"
-      />
     </div>
     <ft-profile-selector class="side profiles" />
   </div>

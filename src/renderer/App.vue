@@ -2,15 +2,86 @@
   <div
     v-if="dataReady"
     id="app"
+    class="app"
     :class="{
-      hideOutlines: hideOutlines,
-      rightAligned: isRightAligned
+      hideOutlines: outlinesHidden,
+      isLocaleRightToLeft: isLocaleRightToLeft,
+      isSideNavOpen: isSideNavOpen,
+      hideLabelsSideBar: hideLabelsSideBar && !isSideNavOpen
     }"
   >
-    <top-nav ref="topNav" />
-    <side-nav ref="sideNav" />
+    <portal-target
+      name="promptPortal"
+      multiple
+      @change="handlePromptPortalUpdate"
+    />
+    <ft-prompt
+      v-if="showReleaseNotes"
+      theme="readable-width"
+      @click="showReleaseNotes = !showReleaseNotes"
+    >
+      <template #label="{ labelId }">
+        <h1
+          :id="labelId"
+          class="changeLogTitle"
+        >
+          {{ changeLogTitle }}
+        </h1>
+      </template>
+      <span
+        class="changeLogText"
+        lang="en"
+        v-html="updateChangelog"
+      />
+      <ft-flex-box>
+        <ft-button
+          :label="$t('Download From Site')"
+          @click="openDownloadsPage"
+        />
+        <ft-button
+          :label="$t('Close')"
+          :text-color="null"
+          :background-color="null"
+          @click="showReleaseNotes = !showReleaseNotes"
+        />
+      </ft-flex-box>
+    </ft-prompt>
+    <ft-prompt
+      v-if="showExternalLinkOpeningPrompt"
+      :label="$t('Are you sure you want to open this link?')"
+      :extra-labels="[lastExternalLinkToBeOpened]"
+      :option-names="externalLinkOpeningPromptNames"
+      :option-values="externalLinkOpeningPromptValues"
+      @click="handleExternalLinkOpeningPromptAnswer"
+    />
+    <ft-search-filters
+      v-if="showSearchFilters"
+    />
+    <ft-keyboard-shortcut-prompt
+      v-if="isKeyboardShortcutPromptShown"
+    />
+    <ft-playlist-add-video-prompt
+      v-if="showAddToPlaylistPrompt"
+    />
+    <ft-create-playlist-prompt
+      v-if="showCreatePlaylistPrompt"
+    />
+    <ft-toast />
+    <ft-progress-bar
+      v-if="showProgressBar"
+    />
+    <top-nav
+      ref="topNav"
+      :inert="isPromptOpen"
+    />
+    <side-nav
+      ref="sideNav"
+      :inert="isPromptOpen"
+    />
     <ft-flex-box
       class="flexBox routerView"
+      role="main"
+      :inert="isPromptOpen"
     >
       <div
         v-if="showUpdatesBanner || showBlogBanner"
@@ -40,49 +111,14 @@
         <RouterView
           ref="router"
           class="routerView"
-          @showOutlines="hideOutlines = false"
         />
-      <!-- </keep-alive> -->
+        <!-- </keep-alive> -->
       </transition>
     </ft-flex-box>
-
-    <ft-prompt
-      v-if="showReleaseNotes"
-      :label="changeLogTitle"
-      @click="showReleaseNotes = !showReleaseNotes"
-    >
-      <span
-        id="changeLogText"
-        v-html="updateChangelog"
-      />
-      <ft-flex-box>
-        <ft-button
-          :label="$t('Download From Site')"
-          @click="openDownloadsPage"
-        />
-        <ft-button
-          :label="$t('Close')"
-          @click="showReleaseNotes = !showReleaseNotes"
-        />
-      </ft-flex-box>
-    </ft-prompt>
-    <ft-prompt
-      v-if="showExternalLinkOpeningPrompt"
-      :label="$t('Are you sure you want to open this link?')"
-      :extra-labels="[lastExternalLinkToBeOpened]"
-      :option-names="externalLinkOpeningPromptNames"
-      :option-values="externalLinkOpeningPromptValues"
-      @click="handleExternalLinkOpeningPromptAnswer"
-    />
-    <ft-toast />
-    <ft-progress-bar
-      v-if="showProgressBar"
-    />
   </div>
 </template>
 
 <script src="./App.js" />
 
 <style src="./themes.css" />
-<style src="./videoJS.css" />
 <style scoped src="./App.css" />

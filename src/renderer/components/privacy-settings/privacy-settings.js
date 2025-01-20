@@ -1,10 +1,10 @@
 import { defineComponent } from 'vue'
 import { mapActions } from 'vuex'
-import FtSettingsSection from '../ft-settings-section/ft-settings-section.vue'
+import FtSettingsSection from '../FtSettingsSection/FtSettingsSection.vue'
 import FtButton from '../ft-button/ft-button.vue'
 import FtToggleSwitch from '../ft-toggle-switch/ft-toggle-switch.vue'
 import FtFlexBox from '../ft-flex-box/ft-flex-box.vue'
-import FtPrompt from '../ft-prompt/ft-prompt.vue'
+import FtPrompt from '../FtPrompt/FtPrompt.vue'
 import { MAIN_PROFILE_ID } from '../../../constants'
 import { showToast } from '../../helpers/utils'
 
@@ -22,13 +22,17 @@ export default defineComponent({
       showSearchCachePrompt: false,
       showRemoveHistoryPrompt: false,
       showRemoveSubscriptionsPrompt: false,
+      showRemovePlaylistsPrompt: false,
       promptValues: [
-        'yes',
-        'no'
+        'delete',
+        'cancel'
       ]
     }
   },
   computed: {
+    rememberSearchHistory: function () {
+      return this.$store.getters.getRememberSearchHistory
+    },
     rememberHistory: function () {
       return this.$store.getters.getRememberHistory
     },
@@ -37,9 +41,6 @@ export default defineComponent({
     },
     saveVideoHistoryWithLastViewedPlaylist: function () {
       return this.$store.getters.getSaveVideoHistoryWithLastViewedPlaylist
-    },
-    removeVideoMetaFiles: function () {
-      return this.$store.getters.getRemoveVideoMetaFiles
     },
 
     profileList: function () {
@@ -50,8 +51,8 @@ export default defineComponent({
     },
     promptNames: function () {
       return [
-        this.$t('Yes'),
-        this.$t('No')
+        this.$t('Yes, Delete'),
+        this.$t('Cancel')
       ]
     }
   },
@@ -59,10 +60,11 @@ export default defineComponent({
     handleSearchCache: function (option) {
       this.showSearchCachePrompt = false
 
-      if (option === 'yes') {
-        this.clearSessionSearchHistory()
-        showToast(this.$t('Settings.Privacy Settings.Search cache has been cleared'))
-      }
+      if (option !== 'delete') { return }
+
+      this.clearSessionSearchHistory()
+      this.removeAllSearchHistoryEntries()
+      showToast(this.$t('Settings.Privacy Settings.Search history and cache have been cleared'))
     },
 
     handleRememberHistory: function (value) {
@@ -73,20 +75,13 @@ export default defineComponent({
       this.updateRememberHistory(value)
     },
 
-    handleVideoMetaFiles: function (value) {
-      if (!value) {
-        this.updateRemoveVideoMetaFiles(false)
-      }
-      this.updateRemoveVideoMetaFiles(value)
-    },
-
     handleRemoveHistory: function (option) {
       this.showRemoveHistoryPrompt = false
 
-      if (option === 'yes') {
-        this.removeAllHistory()
-        showToast(this.$t('Settings.Privacy Settings.Watch history has been cleared'))
-      }
+      if (option !== 'delete') { return }
+
+      this.removeAllHistory()
+      showToast(this.$t('Settings.Privacy Settings.Watch history has been cleared'))
     },
 
     handleRemoveSubscriptions: function (option) {
@@ -94,43 +89,52 @@ export default defineComponent({
 
       this.updateActiveProfile(MAIN_PROFILE_ID)
 
-      if (option === 'yes') {
-        this.profileList.forEach((profile) => {
-          if (profile._id === MAIN_PROFILE_ID) {
-            const newProfile = {
-              _id: MAIN_PROFILE_ID,
-              name: profile.name,
-              bgColor: profile.bgColor,
-              textColor: profile.textColor,
-              subscriptions: []
-            }
-            this.updateProfile(newProfile)
-          } else {
-            this.removeProfile(profile._id)
-          }
-        })
+      if (option !== 'delete') { return }
 
-        this.updateAllSubscriptionsList([])
-        this.updateProfileSubscriptions({
-          activeProfile: MAIN_PROFILE_ID,
-          videoList: [],
-          errorChannels: []
-        })
-      }
+      this.profileList.forEach((profile) => {
+        if (profile._id === MAIN_PROFILE_ID) {
+          const newProfile = {
+            _id: MAIN_PROFILE_ID,
+            name: profile.name,
+            bgColor: profile.bgColor,
+            textColor: profile.textColor,
+            subscriptions: []
+          }
+          this.updateProfile(newProfile)
+        } else {
+          this.removeProfile(profile._id)
+        }
+      })
+
+      this.clearSubscriptionsCache()
+    },
+
+    handleRemovePlaylists: function (option) {
+      this.showRemovePlaylistsPrompt = false
+
+      if (option !== 'delete') { return }
+
+      this.removeAllPlaylists()
+      this.updateQuickBookmarkTargetPlaylistId('favorites')
+      showToast(this.$t('Settings.Privacy Settings.All playlists have been removed'))
     },
 
     ...mapActions([
       'updateRememberHistory',
-      'updateRemoveVideoMetaFiles',
       'removeAllHistory',
+      'updateRememberSearchHistory',
       'updateSaveWatchedProgress',
       'updateSaveVideoHistoryWithLastViewedPlaylist',
       'clearSessionSearchHistory',
+      'removeAllSearchHistoryEntries',
       'updateProfile',
       'removeProfile',
       'updateActiveProfile',
+      'clearSubscriptionsCache',
       'updateAllSubscriptionsList',
-      'updateProfileSubscriptions'
+      'updateProfileSubscriptions',
+      'removeAllPlaylists',
+      'updateQuickBookmarkTargetPlaylistId',
     ])
   }
 })

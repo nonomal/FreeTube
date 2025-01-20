@@ -1,8 +1,10 @@
-import fs from 'fs/promises'
-import { pathExists } from '../../helpers/filesystem'
+import { IpcChannels } from '../../../constants'
+import { base64EncodeUtf8, createWebURL, fetchWithTimeout, randomArrayItem } from '../../helpers/utils'
 
 const state = {
   currentInvidiousInstance: '',
+  currentInvidiousInstanceAuthorization: null,
+  currentInvidiousInstanceUrl: '',
   invidiousInstancesList: null
 }
 
@@ -11,57 +13,107 @@ const getters = {
     return state.currentInvidiousInstance
   },
 
+  getCurrentInvidiousInstanceUrl(state) {
+    return state.currentInvidiousInstanceUrl
+  },
+
+  getCurrentInvidiousInstanceAuthorization(state) {
+    return state.currentInvidiousInstanceAuthorization
+  },
+
   getInvidiousInstancesList(state) {
     return state.invidiousInstancesList
   }
 }
 
 const actions = {
+  async fetchInvidiousInstancesFromFile({ commit }) {
+    const url = createWebURL('/static/invidious-instances.json')
+
+    const fileData = await (await fetch(url)).json()
+    const instances = fileData.filter(e => {
+      return process.env.SUPPORTS_LOCAL_API || e.cors
+    }).map(e => {
+      return e.url
+    })
+
+    commit('setInvidiousInstancesList', instances)
+  },
+
+  /// fetch invidious instances from site and overwrite static file.
   async fetchInvidiousInstances({ commit }) {
     const requestUrl = 'https://api.invidious.io/instances.json'
-
-    let instances = []
     try {
-      const response = await fetch(requestUrl)
+      const response = await fetchWithTimeout(15_000, requestUrl)
       const json = await response.json()
-      instances = json.filter((instance) => {
+      const instances = json.filter((instance) => {
         return !(instance[0].includes('.onion') ||
           instance[0].includes('.i2p') ||
           !instance[1].api ||
-          (!process.env.IS_ELECTRON && !instance[1].cors))
+          (!process.env.SUPPORTS_LOCAL_API && !instance[1].cors))
       }).map((instance) => {
         return instance[1].uri.replace(/\/$/, '')
       })
+
+      if (instances.length !== 0) {
+        commit('setInvidiousInstancesList', instances)
+      } else {
+        console.warn('using static file for invidious instances')
+      }
     } catch (err) {
-      console.error(err)
-    }
-    // If the invidious instance fetch isn't returning anything interpretable
-    if (instances.length === 0) {
-      // Fallback: read from static file
-      const fileName = 'invidious-instances.json'
-      /* eslint-disable-next-line n/no-path-concat */
-      const fileLocation = process.env.NODE_ENV === 'development' ? './static/' : `${__dirname}/static/`
-      if (await pathExists(`${fileLocation}${fileName}`)) {
-        console.warn('reading static file for invidious instances')
-        const fileData = await fs.readFile(`${fileLocation}${fileName}`)
-        instances = JSON.parse(fileData).map((entry) => {
-          return entry.url
-        })
+      if (err.name === 'TimeoutError') {
+        console.error('Fetching the Invidious instance list timed out after 15 seconds. Falling back to local copy.')
+      } else {
+        console.error(err)
       }
     }
-    commit('setInvidiousInstancesList', instances)
   },
 
   setRandomCurrentInvidiousInstance({ commit, state }) {
     const instanceList = state.invidiousInstancesList
-    const randomIndex = Math.floor(Math.random() * instanceList.length)
-    commit('setCurrentInvidiousInstance', instanceList[randomIndex])
+    commit('setCurrentInvidiousInstance', randomArrayItem(instanceList))
   }
 }
 
 const mutations = {
   setCurrentInvidiousInstance(state, value) {
     state.currentInvidiousInstance = value
+
+    let url
+    try {
+      url = new URL(value)
+    } catch { }
+
+    let authorization = null
+
+    if (url && (url.username.length > 0 || url.password.length > 0)) {
+      authorization = `Basic ${base64EncodeUtf8(`${url.username}:${url.password}`)}`
+    }
+
+    state.currentInvidiousInstanceAuthorization = authorization
+
+    let instanceUrl
+
+    if (url && authorization) {
+      url.username = ''
+      url.password = ''
+
+      instanceUrl = url.toString().replace(/\/$/, '')
+    } else {
+      instanceUrl = value
+    }
+
+    state.currentInvidiousInstanceUrl = instanceUrl
+
+    if (process.env.IS_ELECTRON) {
+      const { ipcRenderer } = require('electron')
+
+      if (authorization) {
+        ipcRenderer.send(IpcChannels.SET_INVIDIOUS_AUTHORIZATION, authorization, instanceUrl)
+      } else {
+        ipcRenderer.send(IpcChannels.SET_INVIDIOUS_AUTHORIZATION, null)
+      }
+    }
   },
 
   setInvidiousInstancesList(state, value) {
